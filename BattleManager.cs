@@ -1,5 +1,5 @@
 using UnityEngine;
-using System.Collections.Generic;
+using System.Collections.Generic; // No es necesario aquí realmente
 
 public class BattleManager : MonoBehaviour
 {
@@ -15,6 +15,9 @@ public class BattleManager : MonoBehaviour
 
     private GameObject brutoInstance1;
     private GameObject brutoInstance2;
+    // Cachear HealthSystems para eficiencia
+    private HealthSystem health1;
+    private HealthSystem health2;
 
     void Start()
     {
@@ -51,18 +54,19 @@ public class BattleManager : MonoBehaviour
 
         // --- Instanciar y Configurar Bruto 1 ---
         brutoInstance1 = Instantiate(brutoPrefab, spawnPoint1.position, Quaternion.identity);
-        brutoInstance1.name = "Bruto_Alpha";
-        brutoInstance1.tag = "Player";
-        ConfigureBruto(brutoInstance1, statsBruto1, "Enemy", team1Color);
+        brutoInstance1.name = "Bruto_Alpha"; // Equipo Player (por defecto)
+        brutoInstance1.tag = "Player"; // Asignar tag para que el otro lo encuentre
+        ConfigureBruto(brutoInstance1, statsBruto1, "Enemy", team1Color); // Buscará enemigos
+        health1 = brutoInstance1.GetComponent<HealthSystem>(); // Cachear HealthSystem
 
         // --- Instanciar y Configurar Bruto 2 ---
         brutoInstance2 = Instantiate(brutoPrefab, spawnPoint2.position, Quaternion.identity);
-        brutoInstance2.name = "Bruto_Beta";
-        brutoInstance2.tag = "Enemy";
-        ConfigureBruto(brutoInstance2, statsBruto2, "Player", team2Color);
+        brutoInstance2.name = "Bruto_Beta"; // Equipo Enemy
+        brutoInstance2.tag = "Enemy";   // Asignar tag para que el otro lo encuentre
+        ConfigureBruto(brutoInstance2, statsBruto2, "Player", team2Color); // Buscará Players
+        health2 = brutoInstance2.GetComponent<HealthSystem>(); // Cachear HealthSystem
 
-        // Asegurarse que A* escanee la escena inicial si no lo ha hecho ya
-        // Esto es útil si las plataformas se generan dinámicamente
+        // Asegurarse que A* escanee la escena inicial si es necesario
         // if (AstarPath.active != null) AstarPath.active.Scan();
     }
 
@@ -71,95 +75,77 @@ public class BattleManager : MonoBehaviour
     {
         if (instance == null) return;
 
-        // Asignar Stats
         CharacterData data = instance.GetComponent<CharacterData>();
-        if (data != null) data.baseStats = stats;
-        else Debug.LogError("CharacterData no encontrado en " + instance.name, instance);
+        if (data != null) {
+            data.baseStats = stats;
+            data.InitializeResourcesAndCooldowns();
+        }
+        else Debug.LogError($"CharacterData no encontrado en {instance.name}", instance);
 
-        // Configurar IA
         BrutoAIController ai = instance.GetComponent<BrutoAIController>();
         if (ai != null) ai.enemyTag = enemyTagToSet;
-        else Debug.LogError("BrutoAIController no encontrado en " + instance.name, instance);
+        else Debug.LogError($"BrutoAIController no encontrado en {instance.name}", instance);
 
-        // Configurar AIPath con la velocidad de las stats
         Pathfinding.AIPath aiPath = instance.GetComponent<Pathfinding.AIPath>();
         if(aiPath != null && data != null && data.baseStats != null)
         {
             aiPath.maxSpeed = data.baseStats.movementSpeed;
         } else if (aiPath == null) {
-             Debug.LogError("AIPath no encontrado en " + instance.name, instance);
+             Debug.LogError($"AIPath no encontrado en {instance.name}", instance);
         }
 
-        // Asignar Color
         SpriteRenderer sr = instance.GetComponent<SpriteRenderer>();
         if (sr != null) sr.color = teamColorToSet;
-        else Debug.LogWarning("SpriteRenderer no encontrado en " + instance.name, instance);
+        else Debug.LogWarning($"SpriteRenderer no encontrado en {instance.name}", instance);
     }
 
 
     void Update()
     {
-        // Solo continuar si el script está habilitado (para evitar acciones después de terminar)
         if (!this.enabled) return;
 
-        HealthSystem health1 = GetHealth(brutoInstance1);
-        HealthSystem health2 = GetHealth(brutoInstance2);
+        // Usar las referencias cacheadas y IsAlive()
+        bool alphaAlive = (health1 != null && health1.IsAlive());
+        bool betaAlive = (health2 != null && health2.IsAlive());
 
-        // --- Comprobar condiciones de victoria/empate ---
-        bool winnerFound = false;
+        bool battleOver = false;
 
-        // ¿Ganó Bruto Beta (Equipo Enemy)?
-        if (brutoInstance1 == null && brutoInstance2 != null)
+        if (!alphaAlive && betaAlive)
         {
-            if (health2 != null && health2.IsAlive())
-            {
-                Debug.Log("¡Bruto Beta (Equipo Enemy) GANA!");
-                TriggerCelebration(brutoInstance2);
-                winnerFound = true;
-            }
+            Debug.Log("¡Bruto Beta (Equipo Enemy) GANA!");
+            TriggerCelebration(brutoInstance2);
+            battleOver = true;
         }
-        // ¿Ganó Bruto Alpha (Equipo Player)?
-        else if (brutoInstance2 == null && brutoInstance1 != null)
+        else if (!betaAlive && alphaAlive)
         {
-            if (health1 != null && health1.IsAlive())
-            {
-                 Debug.Log("¡Bruto Alpha (Equipo Player) GANA!");
-                 TriggerCelebration(brutoInstance1);
-                 winnerFound = true;
-            }
+             Debug.Log("¡Bruto Alpha (Equipo Player) GANA!");
+             TriggerCelebration(brutoInstance1);
+             battleOver = true;
         }
-         // ¿Ambos destruidos?
-         else if (brutoInstance1 == null && brutoInstance2 == null)
+         else if (!alphaAlive && !betaAlive)
          {
             Debug.Log("¡EMPATE o ambos destruidos!");
-            winnerFound = true; // Considerar empate como fin
+            battleOver = true;
          }
 
-         // Si se encontró un ganador o empate, desactivar este manager
-         if (winnerFound)
+         if (battleOver)
          {
-             enabled = false;
+             Debug.Log("BattleManager desactivado.");
+             this.enabled = false;
          }
-         // --- Fin comprobación ---
     }
 
-    // Llama a la celebración en el IA del ganador
     void TriggerCelebration(GameObject winner)
     {
+        // Comprobar si el objeto aún existe (podría destruirse justo antes)
         if (winner != null)
         {
             BrutoAIController winnerAI = winner.GetComponent<BrutoAIController>();
-            if (winnerAI != null)
+            // Comprobar si la IA existe y está habilitada (no debería estarlo si acaba de morir, pero sí si ganó)
+            if (winnerAI != null && winnerAI.enabled)
             {
                 winnerAI.StartCelebrating();
             }
         }
-    }
-
-    // Helper para obtener HealthSystem de forma segura
-    private HealthSystem GetHealth(GameObject instance)
-    {
-         if (instance != null) return instance.GetComponent<HealthSystem>();
-         return null;
     }
 }

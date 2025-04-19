@@ -1,9 +1,9 @@
 using UnityEngine;
-using Pathfinding; // Necesario para A* Pathfinding Project
+using Pathfinding;
 using System.Collections;
+using System.Collections.Generic;
 using Random = UnityEngine.Random;
 
-// Asegura que los componentes necesarios estén presentes .
 [RequireComponent(typeof(Seeker))]
 [RequireComponent(typeof(AIPath))]
 [RequireComponent(typeof(CharacterCombat))]
@@ -13,303 +13,286 @@ using Random = UnityEngine.Random;
 
 public class BrutoAIController : MonoBehaviour
 {
-    // --- ESTADOS POSIBLES DE LA IA ---
-    public enum AIState { Idle, Seeking, Attacking, Fleeing, Celebrating, Dead }
-
-    [Header("State & Targeting")]
-    [Tooltip("Estado actual de la IA (solo lectura en runtime)")]
-    public AIState currentState = AIState.Idle;
+    [Header("Targeting & Team")]
     [Tooltip("Tag del equipo enemigo a buscar")]
     public string enemyTag = "Player";
 
-    [Header("AI Pathfinding Settings")]
+    [Header("Pathfinding")]
     [Tooltip("Con qué frecuencia (segundos) la IA recalcula su camino hacia el objetivo")]
     public float pathUpdateRate = 0.5f;
-
-    [Header("AI Jump Settings")]
-    [Tooltip("Tiempo mínimo entre decisiones de salto manual")]
-    public float jumpDecisionCooldown = 1.0f;
-    [Tooltip("Cuánto más alto debe estar el enemigo para considerar un salto manual")]
-    public float minHeightDifferenceToJump = 1.5f;
-    [Tooltip("Cuán cerca horizontalmente debe estar para intentar un salto manual")]
-    public float maxHorizontalDistanceToJump = 3.0f;
-    [Tooltip("Distancia hacia arriba para comprobar obstáculos antes de un salto manual")]
-    public float jumpObstacleCheckDistance = 2.0f;
-    [Tooltip("Fuerza aplicada en un salto manual")]
-    public float manualJumpForce = 10f; // Renombrado para claridad
-
-    [Header("AI Combat Settings")]
-    [Tooltip("Margen extra para dejar de atacar (evita oscilación)")]
-    public float engagementRangeBuffer = 0.2f;
-    [Tooltip("Porcentaje de vida (0 a 1) para huir")]
-    [Range(0f, 1f)] public float fleeHealthThreshold = 0.25f;
-
-    [Header("AI Celebration Settings")]
-    [Tooltip("Duración de la celebración en segundos")]
-    public float celebrationDuration = 5.0f;
-
-    [Header("Ground Check Settings (for Manual Jump)")]
-    [Tooltip("Punto de origen para detectar el suelo")]
-    public Transform groundCheckPoint;
-    [Tooltip("Radio del círculo para detectar suelo")]
-    public float groundCheckRadius = 0.2f;
-    [Tooltip("Capas consideradas como suelo")]
-    public LayerMask groundLayer;
-
-
-    // Referencias a componentes
+    private float lastPathRequestTime = -1f;
     private Seeker seeker;
-    private AIPath aiPath; // Controla el movimiento A*
+    private AIPath aiPath;
+
+    [Header("AI Decision Parameters")]
+    [Tooltip("Frecuencia (segundos) para reevaluar la situación y tomar una decisión.")]
+    public float decisionInterval = 0.2f;
+    [Tooltip("Probabilidad (0-1) de intentar una acción ofensiva vs defensiva o reposicionarse.")]
+    [Range(0f, 1f)] public float aggression = 0.7f;
+    [Tooltip("Distancia a la que intentará mantenerse del objetivo.")]
+    public float preferredCombatDistance = 0.8f;
+    [Tooltip("Distancia adicional antes de considerar usar Dash para acercarse.")]
+    public float dashEngageRangeBonus = 2.0f;
+    [Tooltip("Probabilidad (0-1) de usar una habilidad si está lista y en condiciones.")]
+    [Range(0f, 1f)] public float skillUseChance = 0.4f;
+    [Tooltip("Porcentaje de vida (0-1) por debajo del cual podría intentar retirarse o jugar más defensivo.")]
+    [Range(0f, 1f)] public float lowHealthThreshold = 0.3f;
+    [Tooltip("Probabilidad (0-1) de intentar un Parry si predice un ataque.")]
+    [Range(0f, 1f)] public float parryPreference = 0.3f;
+     [Tooltip("Probabilidad (0-1) de intentar un Dash evasivo si predice un ataque.")]
+    [Range(0f, 1f)] public float dodgePreference = 0.5f;
+
+    [Header("Ground Check (for potential future jump logic)")]
+    public Transform groundCheckPoint;
+    public float groundCheckRadius = 0.2f;
+    public LayerMask groundLayer;
+    private bool isGrounded;
+
+    // Referencias a componentes propios
     private CharacterCombat combat;
     private HealthSystem health;
     private CharacterData characterData;
-    private Rigidbody2D rb; // Necesario para saltos manuales
+    private Rigidbody2D rb;
+    private Animator animator;
 
-    // Objetivo
-    private Transform currentTarget;
-    private HealthSystem targetHealth;
+    // Estado Interno IA
+    private Transform currentTargetTransform;
+    private HealthSystem currentTargetHealth;
+    private float lastDecisionTime;
+    private bool isCelebrating = false;
 
-    // Control de tiempos y estados internos
-    private float lastPathRequestTime = -1f; // Para el recálculo de camino A*
-    private float lastJumpDecisionTime;    // Para el cooldown del salto manual
-    private Coroutine celebrationCoroutine;
-    private bool isGrounded;               // Estado actual de si está en el suelo
-
+    // --- Inicialización ---
     void Awake()
     {
-        // Obtener referencias obligatorias
         seeker = GetComponent<Seeker>();
         aiPath = GetComponent<AIPath>();
         combat = GetComponent<CharacterCombat>();
         health = GetComponent<HealthSystem>();
         characterData = GetComponent<CharacterData>();
         rb = GetComponent<Rigidbody2D>();
+        animator = GetComponent<Animator>();
 
-        // Verificar componentes
-        if (characterData == null || seeker == null || aiPath == null || combat == null || health == null || rb == null)
+        if (groundCheckPoint == null)
         {
-            Debug.LogError("BrutoAIController en " + gameObject.name + " no encontró todos los componentes requeridos. Desactivando IA.", this);
-            enabled = false;
-            return; // Salir si falta algo
-        }
-
-        // Verificar/Crear GroundCheckPoint
-         if (groundCheckPoint == null)
-         {
              Transform foundGroundCheck = transform.Find("GroundCheck");
              if (foundGroundCheck != null) { groundCheckPoint = foundGroundCheck; }
-             else
-             {
+             else {
                  GameObject groundCheckObj = new GameObject("GroundCheck");
                  groundCheckObj.transform.SetParent(transform);
-                 // Posicionar en base al collider (si existe) o un valor por defecto
                  float yOffset = -(GetComponent<Collider2D>()?.bounds.extents.y ?? 0.5f);
-                 groundCheckObj.transform.localPosition = new Vector3(0, yOffset, 0);
+                 groundCheckObj.transform.localPosition = new Vector3(0, yOffset - 0.05f, 0);
                  groundCheckPoint = groundCheckObj.transform;
-                 Debug.LogWarning("GroundCheckPoint no asignado en " + gameObject.name + ". Se creó uno. Ajusta su posición.", this);
+                 Debug.LogWarning($"GroundCheckPoint no asignado en {gameObject.name}. Se creó uno. Ajusta su posición.", this);
              }
-         }
+        }
     }
 
     void Start()
     {
-        if (!enabled) return; // No ejecutar si Awake falló
-
-        health.OnDeath.AddListener(HandleDeath);
-        // Configurar AIPath con stats iniciales
-        if(characterData.baseStats != null)
-        {
-            aiPath.maxSpeed = characterData.baseStats.movementSpeed;
-            // Podrías configurar otros parámetros de AIPath aquí si vienen de stats
-            // aiPath.endReachedDistance = characterData.baseStats.attackRange * 0.9f; // Por ejemplo
-        }
-
-        lastJumpDecisionTime = -jumpDecisionCooldown;
-        ChangeState(AIState.Seeking);
-    }
-
-    void Update()
-    {
-        if (currentState == AIState.Dead || !enabled) return;
-
-        // Actualizar estado 'isGrounded' CADA frame
-        CheckIfGrounded();
-
-        // ----- Comprobación Prioritaria: HUIR -----
-        CheckFleeCondition();
-        if (currentState == AIState.Fleeing) return; // Salir si cambiamos a huir
-        // --------------------------------------------
-
-        // ----- Gestión Centralizada del Objetivo -----
-        bool targetStillValid = IsTargetValid();
-        if (!targetStillValid && (currentState == AIState.Seeking || currentState == AIState.Attacking))
-        {
-            FindTarget(); // Busca uno nuevo
-            if (currentTarget == null) // Si sigue sin haber objetivo
-            {
-                 if(currentState != AIState.Idle) ChangeState(AIState.Idle);
-                 return; // No hay nada que hacer este frame
-            }
-             // Si encontramos uno nuevo, forzar recálculo de camino
-             lastPathRequestTime = -pathUpdateRate; // Para que se recalcule en la siguiente comprobación
-        }
-        // ----- Fin Gestión del Objetivo -----
-
-        // ----- Recalcular Camino Periódicamente -----
-        // Solo si estamos buscando o huyendo y tenemos un objetivo
-        if ((currentState == AIState.Seeking || currentState == AIState.Fleeing) && currentTarget != null)
-        {
-             if (Time.time > lastPathRequestTime + pathUpdateRate)
-             {
-                 RequestPathToTarget();
-                 lastPathRequestTime = Time.time;
-             }
-        }
-        // ----- Fin Recalcular Camino -----
-
-        // ----- Máquina de Estados Principal -----
-        // Comprobación de seguridad: Estados que requieren objetivo
-        if ((currentState == AIState.Seeking || currentState == AIState.Attacking || currentState == AIState.Fleeing) && currentTarget == null)
-        {
-            ChangeState(AIState.Idle); // Si perdimos el objetivo, ir a Idle
+        if (characterData == null || health == null || combat == null || aiPath == null) {
+            Debug.LogError($"Faltan componentes críticos en {gameObject.name}, desactivando IA.");
+            enabled = false;
             return;
         }
 
-        switch (currentState)
-        {
-            case AIState.Idle:
-                if (currentTarget != null) ChangeState(AIState.Seeking);
-                break;
-
-            case AIState.Seeking:
-                // Intentar salto manual si es necesario/ventajoso
-                TryManualJumpLogic();
-
-                // ¿Hemos llegado al destino según AIPath o estamos muy cerca?
-                if (aiPath.reachedDestination || combat.IsTargetInRange(currentTarget)) // Comprobar ambos
-                {
-                     // Verificar si realmente estamos en rango para atacar
-                     if(combat.IsTargetInRange(currentTarget))
-                     {
-                        ChangeState(AIState.Attacking);
-                     }
-                     // Si aiPath llegó pero no estamos en rango, puede que el stopping distance sea grande
-                     // o necesitemos ajustar la lógica. Por ahora, solo atacamos si IsTargetInRange es true.
-                }
-                // Si no, AIPath sigue moviendo al personaje
-                break;
-
-            case AIState.Attacking:
-                // Lógica de Desenganche (Histeresis)
-                float distanceToTarget = Vector2.Distance(transform.position, currentTarget.position);
-                if (distanceToTarget > (characterData.baseStats.attackRange + engagementRangeBuffer))
-                {
-                     ChangeState(AIState.Seeking);
-                     break;
-                }
-                // Intentar atacar
-                combat.Attack(targetHealth);
-                // El movimiento está detenido por ChangeState
-                break;
-
-             case AIState.Fleeing:
-                 // AIPath se encarga de moverse al punto de huida calculado en RequestPathToTarget
-                 // Opcional: Intentar salto manual para evadir
-                 TryManualJumpLogic();
-                 break;
-
-             case AIState.Celebrating:
-                 // Saltar aleatoriamente si está en el suelo
-                 if (isGrounded && Random.Range(0f, 1f) < 0.1f)
-                 {
-                     ManualJump();
-                 }
-                 break;
+        if (health != null) {
+            health.OnDeath.AddListener(HandleDeath);
+            Debug.Log($"{gameObject.name} subscribed HandleDeath to OnDeath.");
+        } else {
+             Debug.LogError($"HealthSystem is null on {gameObject.name} in Start!");
         }
-    }
 
-    // Actualiza la variable isGrounded
-    private void CheckIfGrounded()
-    {
-        if (groundCheckPoint == null) return;
-        isGrounded = Physics2D.OverlapCircle(groundCheckPoint.position, groundCheckRadius, groundLayer);
-    }
-
-    // Verifica si el objetivo actual es válido
-    bool IsTargetValid()
-    {
-        if (currentTarget == null) return false;
-        if (targetHealth == null) targetHealth = currentTarget.GetComponent<HealthSystem>();
-        if (targetHealth == null || !targetHealth.IsAlive()) return false;
-        return true;
-    }
-
-    // Comprueba si debe huir
-    void CheckFleeCondition()
-    {
-        if (currentState == AIState.Fleeing || currentState == AIState.Dead || currentState == AIState.Celebrating) return;
-        if (characterData.baseStats != null && characterData.baseStats.maxHealth > 0)
+        if (characterData.baseStats != null)
         {
-            float currentHealthPercentage = characterData.currentHealth / characterData.baseStats.maxHealth;
-            if (currentHealthPercentage <= fleeHealthThreshold)
+            aiPath.maxSpeed = characterData.baseStats.movementSpeed;
+            aiPath.endReachedDistance = preferredCombatDistance * 0.9f;
+            aiPath.slowdownDistance = preferredCombatDistance;
+            aiPath.canMove = true;
+            aiPath.canSearch = true;
+        } else {
+            Debug.LogWarning($"BaseStats no asignados en {gameObject.name} en Start. AIPath usará valores por defecto.");
+        }
+
+        lastDecisionTime = Time.time;
+        FindTarget();
+    }
+
+    // --- Bucle Principal de IA ---
+    void Update()
+    {
+        if (!enabled || characterData.isStunned)
+        {
+            if (characterData.isStunned && aiPath != null && aiPath.canMove) {
+                 aiPath.canMove = false;
+            }
+            return;
+        }
+
+        if (isCelebrating)
+        {
+            if (aiPath != null && aiPath.canMove) aiPath.canMove = false;
+            if (rb != null && rb.linearVelocity != Vector2.zero) rb.linearVelocity = Vector2.zero;
+            return;
+        }
+
+        CheckIfGrounded();
+
+        if (Time.time >= lastDecisionTime + decisionInterval)
+        {
+            MakeDecision();
+            lastDecisionTime = Time.time;
+        }
+
+        UpdateAStarPath();
+    }
+
+    // --- Lógica de Decisión Principal ---
+    void MakeDecision()
+    {
+        if (isCelebrating) return;
+
+        if (!IsTargetValid())
+        {
+            FindTarget();
+            if (!IsTargetValid())
             {
-                if (!IsTargetValid()) FindTarget(); // Buscar de quién huir si no lo sabemos
-                if(IsTargetValid())
-                {
-                    ChangeState(AIState.Fleeing);
-                    lastPathRequestTime = -pathUpdateRate; // Forzar recálculo inmediato de ruta de huida
-                }
+                EnterIdleState();
+                return;
             }
         }
-    }
 
+        if (characterData.isDashing || characterData.isAttemptingParry) return;
 
-    // Intenta decidir si realizar un salto MANUAL y lo ejecuta
-    void TryManualJumpLogic()
-    {
-         // Usamos la variable 'isGrounded' actualizada en Update
-         if (Time.time >= lastJumpDecisionTime + jumpDecisionCooldown && isGrounded && currentTarget != null)
-         {
-             float verticalDiff = currentTarget.position.y - transform.position.y;
-             float horizontalDist = Mathf.Abs(currentTarget.position.x - transform.position.x);
-
-             // Condición para saltar: Objetivo más alto y cercano
-             if (verticalDiff > minHeightDifferenceToJump && horizontalDist < maxHorizontalDistanceToJump)
+        bool predictedAttack = PredictEnemyAttack();
+        if (predictedAttack && !characterData.isBlocking)
+        {
+            float choice = Random.value;
+            if (choice < parryPreference && combat.TryParry())
+            {
+                Debug.Log($"AI ({gameObject.name}): Intentando Parry!");
+                return;
+            }
+            else if (choice < parryPreference + dodgePreference && CanAffordDash())
              {
-                 // Comprobación de Obstáculos
-                 if (IsJumpPathClear())
-                 {
-                     //Debug.Log(gameObject.name + " intenta salto MANUAL hacia " + currentTarget.name);
-                     if (ManualJump()) // Llama a ManualJump
-                     {
-                        lastJumpDecisionTime = Time.time;
-                     }
+                 Vector2 evadeDir = (transform.position - currentTargetTransform.position).normalized;
+                 if(evadeDir == Vector2.zero) evadeDir = -transform.right;
+                 if (combat.TryDash(evadeDir)) {
+                     Debug.Log($"AI ({gameObject.name}): Intentando Dash Evasivo!");
+                     return;
                  }
-                 else { lastJumpDecisionTime = Time.time - (jumpDecisionCooldown * 0.5f); } // Penalizar menos si está bloqueado
              }
+            else if (characterData.currentStamina > 0)
+            {
+                 if (combat.TryStartBlocking()) {
+                     Debug.Log($"AI ({gameObject.name}): Empezando a Bloquear por amenaza!");
+                     return;
+                 }
+            }
+        }
+        else if (!predictedAttack && characterData.isBlocking) {
+             combat.StopBlocking();
+        }
+
+        if (characterData.isBlocking) return;
+
+        bool isHealthy = true;
+         if (characterData != null && characterData.baseStats != null && characterData.baseStats.maxHealth > 0) {
+             isHealthy = (characterData.currentHealth / characterData.baseStats.maxHealth) > lowHealthThreshold;
          }
+
+        float distanceSqr = (currentTargetTransform.position - transform.position).sqrMagnitude;
+        float attackRangeSqr = characterData.baseStats.attackRange * characterData.baseStats.attackRange;
+        float preferredDistSqr = preferredCombatDistance * preferredCombatDistance;
+
+        bool isTargetInRange_Basic = distanceSqr <= attackRangeSqr;
+        bool isTargetInRange_Preferred = distanceSqr <= preferredDistSqr;
+
+        SkillData chosenSkill = ChooseSkillToUse();
+        if (chosenSkill != null && Random.value < skillUseChance)
+        {
+            bool skillRequiresTarget = chosenSkill.range > 0 || chosenSkill.skillType == SkillType.DirectDamage || chosenSkill.skillType == SkillType.Projectile;
+            float skillRangeSqr = chosenSkill.range * chosenSkill.range;
+            bool skillInRange = chosenSkill.range <= 0 || distanceSqr <= skillRangeSqr;
+
+            if (skillInRange) {
+                 if (combat.TryUseSkill(chosenSkill)) {
+                     Debug.Log($"AI ({gameObject.name}): Usando Skill {chosenSkill.skillName}!");
+                     return;
+                 }
+            } else if (skillRequiresTarget) {
+                 Debug.Log($"AI ({gameObject.name}): Moviéndose para usar Skill {chosenSkill.skillName}");
+                 EnsureMovingTowardsTarget();
+                 return;
+            }
+        }
+
+        if (isTargetInRange_Basic && characterData.IsAttackReady())
+        {
+            if (combat.TryAttack())
+            {
+                 return;
+            }
+        }
+
+        float dashEngageRangeSqr = (preferredCombatDistance + dashEngageRangeBonus) * (preferredCombatDistance + dashEngageRangeBonus);
+        bool wantsToDashEngage = distanceSqr > dashEngageRangeSqr;
+
+        if (wantsToDashEngage && CanAffordDash() && Random.value < aggression) {
+             Vector2 engageDir = (currentTargetTransform.position - transform.position).normalized;
+              if(engageDir == Vector2.zero) engageDir = transform.right;
+             if (combat.TryDash(engageDir)) {
+                 Debug.Log($"AI ({gameObject.name}): Usando Dash para Acercarse!");
+                 return;
+             }
+        }
+        else if (!isTargetInRange_Preferred)
+        {
+             EnsureMovingTowardsTarget();
+        }
+        else if (aiPath != null && aiPath.canMove)
+        {
+             Debug.Log($"AI ({gameObject.name}): En rango preferido, deteniendo movimiento.");
+             aiPath.canMove = false;
+             aiPath.destination = transform.position;
+             if(rb != null) rb.linearVelocity = Vector2.zero;
+        }
     }
 
-    // Comprueba si hay obstáculos directamente encima para el salto manual
-    private bool IsJumpPathClear()
+    // --- Funciones Auxiliares de IA ---
+
+    void EnsureMovingTowardsTarget() {
+        if (isCelebrating) {
+            if (aiPath != null) aiPath.canMove = false;
+            return;
+        }
+
+        if(aiPath != null && !aiPath.canMove) {
+            Debug.Log($"AI ({gameObject.name}): Reanudando movimiento hacia el objetivo.");
+            aiPath.canMove = true;
+        }
+        RequestPathToTarget();
+    }
+
+    void EnterIdleState() {
+        if (this.enabled && !isCelebrating) {
+             Debug.Log($"AI ({gameObject.name}): Entrando en Estado Idle.");
+             if (aiPath != null) aiPath.canMove = false;
+             combat?.StopBlocking();
+        }
+    }
+
+    bool IsTargetValid()
     {
-        if (groundCheckPoint == null) return false; // Necesitamos el punto base
-        float colliderHeightExtent = GetComponent<Collider2D>()?.bounds.extents.y ?? 0.5f;
-        Vector2 checkOrigin = (Vector2)transform.position + Vector2.up * (colliderHeightExtent + 0.05f);
-        RaycastHit2D hit = Physics2D.Raycast(checkOrigin, Vector2.up, jumpObstacleCheckDistance, groundLayer);
-        //Debug.DrawRay(checkOrigin, Vector2.up * jumpObstacleCheckDistance, (hit.collider != null) ? Color.magenta : Color.cyan, 0.1f);
-        return hit.collider == null;
+        return currentTargetTransform != null && currentTargetHealth != null && currentTargetHealth.IsAlive();
     }
 
-
-    // Busca el enemigo más cercano
     void FindTarget()
     {
-        // ... (Sin cambios respecto a la versión anterior) ...
+        if (isCelebrating) return;
+
         GameObject[] potentialTargets = GameObject.FindGameObjectsWithTag(enemyTag);
         Transform closestTarget = null;
-        float minDistance = float.MaxValue;
-        Transform previousTarget = currentTarget;
+        float minDistanceSqr = float.MaxValue;
 
         foreach (GameObject potentialTarget in potentialTargets)
         {
@@ -317,163 +300,146 @@ public class BrutoAIController : MonoBehaviour
             HealthSystem potentialHealth = potentialTarget.GetComponent<HealthSystem>();
             if (potentialHealth == null || !potentialHealth.IsAlive()) continue;
 
-            float distance = Vector2.Distance(transform.position, potentialTarget.transform.position);
-            if (distance < minDistance)
+            float distanceSqr = (potentialTarget.transform.position - transform.position).sqrMagnitude;
+            if (distanceSqr < minDistanceSqr)
             {
-                minDistance = distance;
+                minDistanceSqr = distanceSqr;
                 closestTarget = potentialTarget.transform;
             }
         }
 
-         currentTarget = closestTarget;
-
-         if (currentTarget != null)
-         {
-             targetHealth = currentTarget.GetComponent<HealthSystem>();
-             combat.SetTarget(targetHealth);
-             if(currentTarget != previousTarget) Debug.Log(gameObject.name + " encontró/cambió objetivo: " + currentTarget.name);
-             lastPathRequestTime = -pathUpdateRate; // Forzar recálculo al encontrar nuevo target
-         }
-         else
-         {
-              if(previousTarget != null) Debug.Log(gameObject.name + " no encontró más objetivos válidos.");
-              targetHealth = null;
-              aiPath.destination = transform.position; // Decirle a AIPath que se quede quieto
-              aiPath.canMove = false;
-              combat.SetTarget(null);
-         }
+        Transform previousTarget = currentTargetTransform;
+        if (closestTarget != null)
+        {
+            currentTargetTransform = closestTarget;
+            currentTargetHealth = currentTargetTransform.GetComponent<HealthSystem>();
+            combat.SetTarget(currentTargetHealth);
+            if (currentTargetTransform != previousTarget) {
+                 Debug.Log($"{gameObject.name} encontró/cambió objetivo: {currentTargetTransform.name}");
+                 lastPathRequestTime = -pathUpdateRate;
+                 EnsureMovingTowardsTarget();
+            }
+        }
+        else
+        {
+              if(previousTarget != null) Debug.Log($"{gameObject.name} perdió su objetivo o no encontró nuevos.");
+              EnterIdleState();
+        }
     }
 
-     // Solicita un nuevo camino al Seeker
+    bool PredictEnemyAttack() {
+         if (!IsTargetValid() || animator == null || characterData.baseStats == null) return false;
+         float distSqr = (currentTargetTransform.position - transform.position).sqrMagnitude;
+         float predictRangeSqr = characterData.baseStats.attackRange * 1.5f * characterData.baseStats.attackRange * 1.5f;
+
+         if (distSqr < predictRangeSqr) {
+             Vector2 dirToMe = (transform.position - currentTargetTransform.position).normalized;
+             float dot = Vector2.Dot(currentTargetTransform.right, dirToMe);
+             if (dot > 0.7f && Random.value < 0.10f) {
+                  return true;
+             }
+         }
+         return false;
+    }
+
+    SkillData ChooseSkillToUse() {
+         bool isCurrentlyHealthy = true;
+         if (characterData != null && characterData.baseStats != null && characterData.baseStats.maxHealth > 0) {
+             isCurrentlyHealthy = (characterData.currentHealth / characterData.baseStats.maxHealth) > lowHealthThreshold;
+         }
+
+         SkillData bestSkill = null;
+         foreach (SkillData currentSkill in characterData.skills) {
+             if (characterData.IsSkillReady(currentSkill)) {
+                 if (currentSkill.skillType == SkillType.Heal && !isCurrentlyHealthy) {
+                     Debug.Log($"AI ({gameObject.name}): Prioritizing Heal skill.");
+                     return currentSkill;
+                 }
+                 if (bestSkill == null && (currentSkill.skillType == SkillType.DirectDamage || currentSkill.skillType == SkillType.Projectile || currentSkill.skillType == SkillType.AreaOfEffect)) {
+                     bestSkill = currentSkill;
+                 }
+             }
+         }
+         return bestSkill;
+    }
+
+     bool CanAffordDash() {
+        return characterData.baseStats != null && characterData.currentStamina >= characterData.baseStats.dashCost;
+    }
+
+
+    // --- Pathfinding A* ---
+    void UpdateAStarPath() {
+        if (isCelebrating) return;
+
+        if (aiPath != null && aiPath.canMove && IsTargetValid() && Time.time > lastPathRequestTime + pathUpdateRate)
+        {
+            RequestPathToTarget();
+            lastPathRequestTime = Time.time;
+        }
+    }
+
     void RequestPathToTarget()
     {
-        if (seeker.IsDone() && currentTarget != null && aiPath.canSearch) // Comprobar si puede buscar path
+        if (isCelebrating) return;
+
+        if (seeker != null && seeker.IsDone() && currentTargetTransform != null && aiPath != null && aiPath.canSearch)
         {
-            Vector3 targetPos;
-            if (currentState == AIState.Fleeing)
-            {
-                Vector2 fleeDir = ((Vector2)transform.position - (Vector2)currentTarget.position).normalized;
-                targetPos = transform.position + (Vector3)(fleeDir * 10f); // Punto de huida
-                // Opcional: Buscar nodo válido más cercano a targetPos
-                 targetPos = (Vector3)AstarPath.active.GetNearest(targetPos).position;
-            }
-            else // Seeking
-            {
-                targetPos = currentTarget.position;
-            }
-            seeker.StartPath(transform.position, targetPos, OnPathComplete);
+            seeker.StartPath(transform.position, currentTargetTransform.position, OnPathComplete);
         }
     }
 
-    // Callback cuando el Seeker termina
     public void OnPathComplete(Path p)
     {
-        if (p.error) Debug.LogWarning($"{gameObject.name} no pudo calcular camino: {p.errorLog}");
-        // AIPath tomará el camino automáticamente si está configurado para hacerlo
+        if (p.error)
+        {
+            Debug.LogWarning($"{gameObject.name} no pudo calcular camino: {p.errorLog}");
+            if(!isCelebrating) EnterIdleState();
+        }
     }
 
-    // Gestiona las transiciones entre estados
-    void ChangeState(AIState newState)
+    // --- Manejo de Estados Propios ---
+    void HandleDeath()
     {
-        if (currentState == newState) return;
-
-        // --- Lógica de Salida ---
-        switch (currentState)
-        {
-             case AIState.Attacking: // Al salir de atacar, siempre permitir moverse de nuevo
-                aiPath.canMove = true;
-                break;
-             case AIState.Fleeing:
-                 aiPath.canMove = true; // Asegurar que pueda moverse si deja de huir
-                 break;
-             case AIState.Celebrating:
-                 if (celebrationCoroutine != null) StopCoroutine(celebrationCoroutine);
-                 aiPath.canMove = true; // Permitir moverse si deja de celebrar
-                 break;
-             // Idle, Seeking, Dead no necesitan lógica de salida específica aquí
-        }
-
-        currentState = newState;
-        Debug.Log(gameObject.name + " cambió al estado: " + newState);
-
-        // --- Lógica de Entrada ---
-        switch (currentState)
-        {
-            case AIState.Idle:
-                aiPath.canMove = false;
-                aiPath.destination = transform.position; // Evitar deslizamiento
-                if(rb != null) rb.linearVelocity = Vector2.zero; // Detener física
-                break;
-            case AIState.Seeking:
-                aiPath.canMove = true;    // Habilitar movimiento A*
-                lastPathRequestTime = -pathUpdateRate; // Forzar recálculo inmediato
-                break;
-            case AIState.Attacking:
-                aiPath.canMove = false;   // Detener movimiento A*
-                if(rb != null) rb.linearVelocity = Vector2.zero; // Detener física
-                break;
-             case AIState.Fleeing:
-                 aiPath.canMove = true;    // Habilitar movimiento A* para huir
-                 lastPathRequestTime = -pathUpdateRate; // Forzar cálculo de ruta de huida
-                 break;
-             case AIState.Celebrating:
-                 aiPath.canMove = false;   // Detener movimiento A*
-                 if(rb != null) rb.linearVelocity = Vector2.zero;
-                 celebrationCoroutine = StartCoroutine(CelebrateRoutine());
-                 break;
-             case AIState.Dead:
-                aiPath.canMove = false;
-                combat.DisableAttack();
-                if (rb != null) rb.simulated = false;
-                Collider2D col = GetComponent<Collider2D>();
-                if (col != null) col.enabled = false;
-                StopAllCoroutines();
-                break;
-        }
+        Debug.Log($"HandleDeath called by OnDeath event for {gameObject.name}. Disabling AI.");
+        if(aiPath != null) aiPath.canMove = false;
+        isCelebrating = false;
+        enabled = false;
     }
-
-    // Corrutina para celebrar
-    IEnumerator CelebrateRoutine()
-    {
-        float startTime = Time.time;
-        while(Time.time < startTime + celebrationDuration)
-        {
-            // La lógica de salto se ejecuta en Update
-            yield return null;
-        }
-        if (currentState == AIState.Celebrating) ChangeState(AIState.Idle);
-    }
-
-
-    // --- Salto Manual (Usa Rigidbody) ---
-    public bool ManualJump()
-    {
-        // 'isGrounded' se actualiza en Update
-        if (isGrounded && rb != null && rb.simulated)
-        {
-            //Debug.Log(gameObject.name + " ejecutando salto manual"); // Log de depuración
-            rb.linearVelocity = new Vector2(rb.linearVelocity.x, 0f); // Anular velocidad Y antes de saltar
-            rb.AddForce(Vector2.up * manualJumpForce, ForceMode2D.Impulse); // Usar la fuerza definida
-            return true;
-        }
-        return false;
-    }
-    // ----------------------------------
-
-
-     void HandleDeath()
-     {
-          if (currentState != AIState.Dead) ChangeState(AIState.Dead);
-     }
 
      public void StartCelebrating()
      {
-          if (currentState != AIState.Dead) ChangeState(AIState.Celebrating);
+          if (!this.enabled || !health.IsAlive() || isCelebrating) return;
+
+           Debug.Log($"AI ({gameObject.name}): ¡CELEBRANDO!");
+           isCelebrating = true; // Establecer el flag
+
+           // Detener acciones de combate y movimiento
+           if (aiPath != null) aiPath.canMove = false;
+           if (rb != null) rb.linearVelocity = Vector2.zero;
+           combat?.InterruptActions();
+           combat?.StopBlocking();
+           currentTargetTransform = null;
+           currentTargetHealth = null;
+
+           // *** Usar ?. para llamada segura ***
+           animator?.SetTrigger("Celebrate");
      }
 
-     void OnDestroy()
-     {
-         if (health != null) health.OnDeath.RemoveListener(HandleDeath);
-         StopAllCoroutines();
-     }
+
+    // --- Otros ---
+    void CheckIfGrounded()
+    {
+        if (groundCheckPoint == null) return;
+        isGrounded = Physics2D.OverlapCircle(groundCheckPoint.position, groundCheckRadius, groundLayer);
+    }
+
+    void OnDestroy()
+    {
+        if (health != null)
+        {
+             health.OnDeath.RemoveListener(HandleDeath);
+        }
+        StopAllCoroutines();
+    }
 }
