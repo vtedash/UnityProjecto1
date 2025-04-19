@@ -3,7 +3,7 @@ using Pathfinding; // Necesario para A* Pathfinding Project
 using System.Collections;
 using Random = UnityEngine.Random;
 
-// Asegura que los componentes necesarios estén presentes
+// Asegura que los componentes necesarios estén presentes .
 [RequireComponent(typeof(Seeker))]
 [RequireComponent(typeof(AIPath))]
 [RequireComponent(typeof(CharacterCombat))]
