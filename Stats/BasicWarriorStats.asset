@@ -12,8 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 239067d50f530ea4d96a4a8471940af6, type: 3}
   m_Name: BasicWarriorStats
   m_EditorClassIdentifier: 
-  maxHealth: 100
-  movementSpeed: 3
+  maxHealth: 150
+  movementSpeed: 2.55
   attackRange: 1
-  attackDamage: 10
-  attackCooldown: 1
+  attackDamage: 15
+  attackCooldown: 1.2
