@@ -8,13 +8,22 @@ public class BrutoAIController : MonoBehaviour
     public enum AIState { Idle, Seeking, Attacking, Dead }
 
     public AIState currentState = AIState.Idle;
-    public string enemyTag = "Player"; // O la tag que uses para diferenciar equipos
+    public string enemyTag = "Player";
 
     private CharacterMovement movement;
     private CharacterCombat combat;
     private HealthSystem health;
     private Transform currentTarget;
     private HealthSystem targetHealth;
+
+    // --- NUEVAS VARIABLES PARA DECISIÓN DE SALTO ---
+    [Header("AI Jump Settings")]
+    public float jumpDecisionCooldown = 1.0f; // Tiempo mínimo entre decisiones de salto
+    public float minHeightDifferenceToJump = 1.5f; // Cuánto más alto debe estar el enemigo para saltar
+    public float maxHorizontalDistanceToJump = 3.0f; // Cuán cerca horizontalmente debe estar para intentar saltar
+
+    private float lastJumpDecisionTime;
+    // ---------------------------------------------
 
     void Awake()
     {
@@ -25,65 +34,71 @@ public class BrutoAIController : MonoBehaviour
 
     void Start()
     {
-        // Suscribirse al evento OnDeath para cambiar de estado
         health.OnDeath.AddListener(HandleDeath);
-        // Empezar buscando un enemigo
         ChangeState(AIState.Seeking);
+        lastJumpDecisionTime = -jumpDecisionCooldown; // Permitir decisión de salto inicial
     }
 
     void Update()
     {
-        if (currentState == AIState.Dead) return; // No hacer nada si estamos muertos
+        if (currentState == AIState.Dead) return;
 
-        // Lógica de estados
         switch (currentState)
         {
             case AIState.Idle:
-                // Quizás buscar enemigo si no tenemos uno
                 FindTarget();
                 if (currentTarget != null) ChangeState(AIState.Seeking);
                 break;
 
             case AIState.Seeking:
-                // Si no tenemos objetivo o el objetivo murió, buscar uno nuevo
                 if (currentTarget == null || targetHealth == null || !targetHealth.IsAlive())
                 {
                     FindTarget();
-                    // Si no encontramos nuevo objetivo, volver a Idle (o esperar)
-                    if (currentTarget == null) {
-                         ChangeState(AIState.Idle);
-                         break;
-                    }
+                    if (currentTarget == null) { ChangeState(AIState.Idle); break; }
                 }
 
-                // Comprobar si estamos en rango de ataque
+                // --- LÓGICA DE DECISIÓN DE SALTO ---
+                // Comprobar si es momento de considerar un salto y si estamos en el suelo
+                if (Time.time >= lastJumpDecisionTime + jumpDecisionCooldown && movement.IsGrounded())
+                {
+                    float verticalDiff = currentTarget.position.y - transform.position.y;
+                    float horizontalDist = Mathf.Abs(currentTarget.position.x - transform.position.x);
+
+                    // ¿El objetivo está significativamente más alto Y horizontalmente cerca?
+                    if (verticalDiff > minHeightDifferenceToJump && horizontalDist < maxHorizontalDistanceToJump)
+                    {
+                        Debug.Log(gameObject.name + " intenta saltar hacia " + currentTarget.name);
+                        movement.Jump(); // Intentar saltar
+                        lastJumpDecisionTime = Time.time; // Reiniciar cooldown de decisión
+                        // Nota: El movimiento horizontal continúa en FixedUpdate
+                    }
+                }
+                // -----------------------------------
+
+                // Comprobar si estamos en rango de ataque (independiente del salto)
                 if (combat.IsTargetInRange(currentTarget))
                 {
                     ChangeState(AIState.Attacking);
                 }
-                // Si no estamos en rango, seguir moviéndonos (el movimiento ya lo hace CharacterMovement)
+                // Si no, CharacterMovement ya se encarga de moverse hacia el target en FixedUpdate
                 break;
 
             case AIState.Attacking:
-                 // Si no tenemos objetivo, el objetivo murió o salimos de rango, volver a buscar/seguir
                 if (currentTarget == null || targetHealth == null || !targetHealth.IsAlive())
                 {
-                    FindTarget(); // Intenta encontrar uno nuevo inmediatamente
-                     if (currentTarget == null) {
-                         ChangeState(AIState.Idle); // No hay nadie más
-                     } else {
-                        ChangeState(AIState.Seeking); // Encontró otro, ir a por él
-                     }
-                     break;
+                    FindTarget();
+                    if (currentTarget == null) { ChangeState(AIState.Idle); } else { ChangeState(AIState.Seeking); }
+                    break;
                 }
 
+                // Si el objetivo se sale de rango mientras atacamos, volvemos a buscarlo/perseguirlo
                 if (!combat.IsTargetInRange(currentTarget))
                 {
-                     ChangeState(AIState.Seeking); // Se salió de rango, perseguir
+                     ChangeState(AIState.Seeking);
                      break;
                 }
 
-                // Intentar atacar (el cooldown está dentro de CharacterCombat)
+                // Intentar atacar
                 combat.Attack(targetHealth);
                 break;
         }
@@ -97,10 +112,7 @@ public class BrutoAIController : MonoBehaviour
 
         foreach (GameObject potentialTarget in potentialTargets)
         {
-            // Asegurarse de no seleccionarse a sí mismo si comparten tag por error
             if (potentialTarget == gameObject) continue;
-
-            // Asegurarse de que el objetivo potencial está vivo
             HealthSystem potentialHealth = potentialTarget.GetComponent<HealthSystem>();
             if (potentialHealth == null || !potentialHealth.IsAlive()) continue;
 
@@ -114,18 +126,24 @@ public class BrutoAIController : MonoBehaviour
 
          if (closestTarget != null)
          {
+             if(currentTarget != closestTarget) // Solo loguear si cambia o es la primera vez
+             {
+                 Debug.Log(gameObject.name + " encontró/cambió objetivo: " + closestTarget.name);
+             }
              currentTarget = closestTarget;
-             targetHealth = currentTarget.GetComponent<HealthSystem>(); // Cachear la salud del objetivo
-             movement.SetTarget(currentTarget);
+             targetHealth = currentTarget.GetComponent<HealthSystem>();
+             movement.SetTarget(currentTarget); // Decirle a Movement a quién seguir horizontalmente
              combat.SetTarget(targetHealth);
-             Debug.Log(gameObject.name + " encontró objetivo: " + currentTarget.name);
          }
          else
          {
-              Debug.Log(gameObject.name + " no encontró objetivos.");
+              if(currentTarget != null) // Solo loguear si antes tenía objetivo
+              {
+                 Debug.Log(gameObject.name + " no encontró más objetivos.");
+              }
               currentTarget = null;
               targetHealth = null;
-              movement.SetTarget(null); // Decirle al movimiento que no hay objetivo
+              movement.SetTarget(null);
               combat.SetTarget(null);
          }
     }
@@ -134,35 +152,36 @@ public class BrutoAIController : MonoBehaviour
     {
         if (currentState == newState) return;
 
-        // Salir del estado actual (lógica de limpieza si es necesaria)
+        // Lógica al salir del estado anterior
         switch (currentState)
         {
              case AIState.Attacking:
-                movement.ResumeMovement(); // Permitir moverse de nuevo al salir de atacar
+                movement.ResumeMovement(); // Reanudar movimiento si estaba detenido por atacar
                 break;
-            // Añadir otros casos si es necesario
         }
 
         currentState = newState;
         Debug.Log(gameObject.name + " cambió al estado: " + newState);
 
-        // Entrar en el nuevo estado (lógica de inicialización)
+        // Lógica al entrar al nuevo estado
         switch (currentState)
         {
             case AIState.Idle:
-                movement.StopMovement(); // No moverse en Idle
+                movement.StopMovement(); // Detener movimiento horizontal
                 break;
             case AIState.Seeking:
-                movement.ResumeMovement(); // Asegurarse de que puede moverse
-                // El objetivo ya debería estar asignado por FindTarget()
+                movement.ResumeMovement(); // Asegurar que puede moverse
                 break;
             case AIState.Attacking:
-                movement.StopMovement(); // Detenerse para atacar (puedes cambiar esto si quieres ataques en movimiento)
+                // Considera si quieres que se detenga al atacar. Ahora con gravedad, quizás no es necesario.
+                // movement.StopMovement(); // Comenta o descomenta esto según prefieras
                 break;
              case AIState.Dead:
                 movement.StopMovement();
                 combat.DisableAttack();
-                // Podrías desactivar colliders aquí también
+                // Considera desactivar también el Rigidbody o el Collider aquí
+                // rb.simulated = false;
+                // GetComponent<Collider2D>().enabled = false;
                 break;
         }
     }
@@ -172,7 +191,6 @@ public class BrutoAIController : MonoBehaviour
           ChangeState(AIState.Dead);
      }
 
-     // Es buena práctica desuscribirse de los eventos al destruir el objeto
      void OnDestroy()
      {
          if (health != null)
