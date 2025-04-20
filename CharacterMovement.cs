@@ -53,11 +53,10 @@ public class CharacterMovement : MonoBehaviour
     // Verifica si el personaje está tocando el suelo
     private void CheckIfGrounded()
     {
-        if (groundCheckPoint == null || characterData == null || characterData.isStunned) { // Añadido chequeo stun
+        if (groundCheckPoint == null || characterData == null || characterData.isStunned) {
             isGrounded = false;
             return;
         }
-        // Dibuja un círculo en la posición de groundCheckPoint y comprueba si colisiona con groundLayer
         isGrounded = Physics2D.OverlapCircle(groundCheckPoint.position, groundCheckRadius, groundLayer);
     }
 
@@ -68,12 +67,10 @@ public class CharacterMovement : MonoBehaviour
         if (isGrounded && characterData != null && !characterData.isStunned && !characterData.isDashing && !characterData.isBlocking)
         {
             if(rb != null) {
-                // Resetear velocidad Y para un salto más consistente
                 rb.linearVelocity = new Vector2(rb.linearVelocity.x, 0f);
-                // Aplicar fuerza vertical
                 rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
-                isGrounded = false; // Asumir que ya no está grounded inmediatamente
-                // animator?.SetTrigger("Jump"); // Trigger animación si existe
+                isGrounded = false;
+                // animator?.SetTrigger("Jump");
                 return true;
             }
         }
@@ -83,7 +80,6 @@ public class CharacterMovement : MonoBehaviour
     // Permite a otros scripts consultar si está en el suelo
     public bool IsGrounded()
     {
-        // Devolver el último estado calculado en Update
         return isGrounded;
     }
 
