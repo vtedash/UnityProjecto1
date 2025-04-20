@@ -13,7 +13,22 @@ MonoBehaviour:
   m_Name: FastScoutStats
   m_EditorClassIdentifier: 
   maxHealth: 80
-  movementSpeed: 4.5
+  movementSpeed: 7
   attackRange: 1
   attackDamage: 8
   attackCooldown: 0.8
+  maxStamina: 100
+  staminaRegenRate: 15
+  dashSpeedMult: 2
+  dashDuration: 0.2
+  dashCost: 20
+  dashCooldown: 1.5
+  dashInvulnerabilityDuration: 0.2
+  blockStaminaDrain: 10
+  blockDamageMultiplier: 0.25
+  blockSuccessStaminaCostMult: 0.1
+  blockSpeedMultiplier: 0.5
+  parryWindow: 0.15
+  parryStunDuration: 1
+  parryCost: 30
+  parryCooldown: 2
