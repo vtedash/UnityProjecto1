@@ -110,14 +110,24 @@ public class BattleManager : MonoBehaviour
         Debug.Log("Battle ready.");
     }
 
+        // --- Dentro de BattleManager.cs ---
+
     void ConfigureLuchadorInstance(GameObject instance, string enemyTagToSet, Color teamColorToSet) {
          LuchadorAIController ai = instance.GetComponent<LuchadorAIController>();
          if (ai != null) ai.enemyTag = enemyTagToSet;
+
          SpriteRenderer sr = instance.GetComponent<SpriteRenderer>();
          if (sr != null) sr.color = teamColorToSet;
-         CharacterVisuals visuals = instance.GetComponent<CharacterVisuals>();
-         visuals?.UpdateWeaponVisuals();
-    }
+
+         // --- LÍNEAS A COMENTAR/ELIMINAR ---
+         // CharacterVisuals visuals = instance.GetComponent<CharacterVisuals>();
+         // visuals?.UpdateWeaponVisuals();
+         // ---------------------------------
+
+         // Debug.Log($"Instancia '{instance.name}' configurada. EnemyTag AI: {enemyTagToSet}"); // Comentado log
+     }
+
+    // --- El resto de BattleManager.cs SIN CAMBIOS ---
 
     void UpdateUIHealthLeft(float currentHealth, float maxHealth) { if (textVidaLeft != null) textVidaLeft.text = $"Vida:{currentHealth:F0}"; }
     void UpdateUIHealthRight(float currentHealth, float maxHealth) { if (textVidaRight != null) textVidaRight.text = $"Vida:{currentHealth:F0}"; }

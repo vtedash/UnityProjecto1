@@ -1,6 +1,6 @@
 using UnityEngine;
-using UnityEngine.SceneManagement; // Para cambiar de escena
-using TMPro; // Si usas TextMeshPro para los textos
+using UnityEngine.SceneManagement;
+using TMPro;
 
 public class MainMenuUI : MonoBehaviour
 {
@@ -9,66 +9,61 @@ public class MainMenuUI : MonoBehaviour
     public TextMeshProUGUI levelText;
     public TextMeshProUGUI xpText;
     public TextMeshProUGUI weaponText;
-    // Añade referencias para botones si no las conectas por Inspector
 
     [Header("Data")]
-    public string playerCharacterID = "PlayerBruto"; // ID para guardar/cargar al jugador
-    public string defaultOpponentID = "OpponentBruto1"; // Un oponente por defecto
-    public WeaponData defaultPlayerWeapon; // ARRASTRA AQUÍ 'Fist.asset'
+    public string playerCharacterID = "PlayerBruto";
+    public string defaultOpponentID = "OpponentBruto1";
+    [Tooltip("Assign Fist.asset from Resources/Weapons")]
+    public WeaponData defaultPlayerWeapon;
 
-    private CharacterData loadedPlayerData; // Para guardar los datos cargados
+    // *** AHORA GUARDA CharacterSaveData ***
+    private SaveLoadSystem.CharacterSaveData loadedPlayerSaveData;
 
     void Start()
     {
         if (defaultPlayerWeapon == null) {
-             Debug.LogError("Asigna el WeaponData 'Fist' al campo Default Player Weapon en MainMenuUI!");
-             // Desactivar botones o mostrar error
-             return;
+             Debug.LogError("Assign Default Player Weapon in MainMenuUI!"); return;
         }
         LoadAndDisplayPlayerData();
-        // Asegura que exista un oponente por defecto para la primera vez
-        SaveLoadSystem.LoadOrCreateDefaultCharacterData(defaultOpponentID, defaultPlayerWeapon);
+        // Asegura que exista un oponente por defecto
+        SaveLoadSystem.LoadOrCreateDefaultCharacterSaveData(defaultOpponentID, defaultPlayerWeapon);
     }
 
     void LoadAndDisplayPlayerData()
     {
-        loadedPlayerData = SaveLoadSystem.LoadOrCreateDefaultCharacterData(playerCharacterID, defaultPlayerWeapon);
+        // *** LLAMA A LA FUNCIÓN CORREGIDA ***
+        loadedPlayerSaveData = SaveLoadSystem.LoadOrCreateDefaultCharacterSaveData(playerCharacterID, defaultPlayerWeapon);
 
-        if (loadedPlayerData != null)
+        // *** USA LOS DATOS DE loadedPlayerSaveData ***
+        if (loadedPlayerSaveData != null)
         {
-            if(playerNameText) playerNameText.text = playerCharacterID; // Muestra el ID como nombre por ahora
-            if(levelText) levelText.text = $"Nivel: {loadedPlayerData.level}";
-            if(xpText) xpText.text = $"XP: {loadedPlayerData.currentXP:F0} / {loadedPlayerData.xpToNextLevel:F0}";
-            if(weaponText) weaponText.text = $"Arma: {loadedPlayerData.equippedWeapon?.weaponName ?? "Ninguna"}";
-            // TODO: Mostrar skills, stats, etc.
+            if(playerNameText) playerNameText.text = playerCharacterID;
+            if(levelText) levelText.text = $"Nivel: {loadedPlayerSaveData.level}";
+            if(xpText) xpText.text = $"XP: {loadedPlayerSaveData.currentXP:F0} / {loadedPlayerSaveData.xpToNextLevel:F0}";
+            // Accede al nombre del arma desde el SaveData, no necesita cargar el asset aquí
+            if(weaponText) weaponText.text = $"Arma: {loadedPlayerSaveData.equippedWeaponAssetName ?? "Ninguna"}";
         }
         else
         {
-            // Mostrar error en la UI
+            // ... (mostrar error en UI) ...
             if(playerNameText) playerNameText.text = "ERROR";
-            if(levelText) levelText.text = "Nivel: -";
-            if(xpText) xpText.text = "XP: - / -";
-            if(weaponText) weaponText.text = "Arma: -";
-            Debug.LogError("Failed to load or create player data!");
+             if(levelText) levelText.text = "Nivel: -";
+             if(xpText) xpText.text = "XP: - / -";
+             if(weaponText) weaponText.text = "Arma: -";
+             Debug.LogError("Failed to load or create player data!");
         }
     }
 
-    // --- Funciones para los Botones ---
-
     public void OnStartFightButtonClicked()
     {
-        if (loadedPlayerData == null) {
-            Debug.LogError("No se pueden iniciar la pelea, datos del jugador no cargados.");
-            return;
-        }
+        // *** YA NO NECESITA loadedPlayerData aquí ***
+        // if (loadedPlayerSaveData == null) { Debug.LogError("Player data not loaded."); return; }
 
         Debug.Log("Iniciando pelea...");
-        // Guarda los IDs de los personajes que lucharán para que la siguiente escena los lea
         PlayerPrefs.SetString("PlayerCharacterIDToLoad", playerCharacterID);
-        PlayerPrefs.SetString("OpponentCharacterIDToLoad", defaultOpponentID); // Lucha contra el oponente por defecto
-        PlayerPrefs.Save(); // Guarda los PlayerPrefs
-
-        SceneManager.LoadScene("SampleScene"); // Cambia "SampleScene" por el nombre de tu escena de batalla
+        PlayerPrefs.SetString("OpponentCharacterIDToLoad", defaultOpponentID);
+        PlayerPrefs.Save();
+        SceneManager.LoadScene("SampleScene"); // Cambia si tu escena se llama diferente
     }
 
     public void OnQuitButtonClicked()
@@ -76,9 +71,7 @@ public class MainMenuUI : MonoBehaviour
         Debug.Log("Saliendo del juego...");
         Application.Quit();
         #if UNITY_EDITOR
-        UnityEditor.EditorApplication.isPlaying = false; // Cierra el modo Play en el editor
+        UnityEditor.EditorApplication.isPlaying = false;
         #endif
     }
-
-    // Podrías añadir botones para elegir oponente, ver inventario, etc. más adelante
 }
