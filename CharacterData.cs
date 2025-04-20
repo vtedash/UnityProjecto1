@@ -1,10 +1,10 @@
 using UnityEngine;
 using System.Collections.Generic;
-using Pathfinding; // Necesario para referencia a AIPath en ApplyStun
+using Pathfinding; // Necesario para AIPath
 
-public class CharacterData : MonoBehaviour // Asegúrate de que hereda de MonoBehaviour
+public class CharacterData : MonoBehaviour
 {
-    // --- STATS BASE (Evolucionan con nivel/mejoras) ---
+    // --- STATS BASE ---
     [Header("Base Stats (Evolucionan con Nivel)")]
     public float baseMaxHealth = 100f;
     public float baseMovementSpeed = 5f;
@@ -27,33 +27,31 @@ public class CharacterData : MonoBehaviour // Asegúrate de que hereda de MonoBe
     public float baseParryCost = 30f;
     public float baseParryCooldown = 2.0f;
 
-
+    // --- PROGRESIÓN ---
     [Header("Progression")]
     public int level = 1;
     public float currentXP = 0f;
     public float xpToNextLevel = 100f;
 
+    // --- EQUIPO Y SKILLS ---
     [Header("Equipment & Learned Skills")]
-    public WeaponData equippedWeapon; // Referencia al arma equipada
-    public List<SkillData> learnedSkills = new List<SkillData>(); // Habilidades activas aprendidas
-
+    public WeaponData equippedWeapon;
+    public List<SkillData> learnedSkills = new List<SkillData>();
 
     // --- ESTADO ACTUAL (Runtime) ---
     [Header("Current State (Runtime - Read Only)")]
     [SerializeField] private float _currentHealth;
     public float currentHealth { get => _currentHealth; private set => _currentHealth = value; }
-
     [SerializeField] private float _currentStamina;
     public float currentStamina { get => _currentStamina; private set => _currentStamina = value; }
 
-    // --- COOLDOWN TIMERS (Runtime) ---
+    // --- TIMERS (Runtime) ---
     [HideInInspector] public float attackAvailableTime = 0f;
     [HideInInspector] public float dashAvailableTime = 0f;
     [HideInInspector] public float parryAvailableTime = 0f;
     public Dictionary<string, float> skillAvailableTimes = new Dictionary<string, float>();
 
-
-    // --- COMBAT STATE FLAGS (Runtime) ---
+    // --- FLAGS (Runtime) ---
     public bool isBlocking { get; private set; } = false;
     public bool isDashing { get; private set; } = false;
     public bool isInvulnerable { get; private set; } = false;
@@ -61,12 +59,11 @@ public class CharacterData : MonoBehaviour // Asegúrate de que hereda de MonoBe
     public bool isAttemptingParry { get; private set; } = false;
     private float stunEndTime;
 
-
-    // --- REFERENCIAS A COMPONENTES (Opcional, pero útil) ---
+    // --- REFERENCIAS ---
     private CharacterCombat combatController;
     private HealthSystem healthSystem;
-    private AIPath aiPath; // Para stun
-    private Rigidbody2D rb; // Para stun
+    private AIPath aiPath;
+    private Rigidbody2D rb;
 
     void Awake()
     {
@@ -74,187 +71,134 @@ public class CharacterData : MonoBehaviour // Asegúrate de que hereda de MonoBe
         healthSystem = GetComponent<HealthSystem>();
         aiPath = GetComponent<AIPath>();
         rb = GetComponent<Rigidbody2D>();
-
-        if (equippedWeapon == null)
-        {
-            Debug.LogWarning($"CharacterData on {gameObject.name} has no equipped weapon assigned in Awake. Ensure it's set in the prefab or loaded.", this);
-        }
-    }
-
-    void Start()
-    {
-        // La inicialización se hace DESPUÉS de cargar/copiar datos
-        // desde BattleManager/FightManager
+        if (equippedWeapon == null) Debug.LogWarning($"[{gameObject.name}] No weapon assigned in Awake.", this);
     }
 
     void Update()
     {
         CheckStunEnd();
-        if (!isStunned && !isDashing && !isBlocking && currentStamina < baseMaxStamina)
-        {
+        if (!isStunned && !isDashing && !isBlocking && currentStamina < baseMaxStamina) {
             RegenerateStamina(Time.deltaTime);
         }
     }
 
-    // LLAMADO DESDE BattleManager/FightManager después de copiar datos
     public void InitializeResourcesAndCooldowns()
     {
         currentHealth = baseMaxHealth;
         currentStamina = baseMaxStamina;
-
         float startTime = Time.time;
-        attackAvailableTime = startTime;
-        dashAvailableTime = startTime;
-        parryAvailableTime = startTime;
-
+        attackAvailableTime = startTime; dashAvailableTime = startTime; parryAvailableTime = startTime;
         skillAvailableTimes.Clear();
-        foreach (var skill in learnedSkills)
-        {
-            if (skill != null && !skillAvailableTimes.ContainsKey(skill.skillID))
-            {
-                skillAvailableTimes.Add(skill.skillID, startTime);
-            }
+        if (learnedSkills != null) { // Chequeo null
+             foreach (var skill in learnedSkills) {
+                 if (skill != null && !skillAvailableTimes.ContainsKey(skill.skillID)) {
+                     skillAvailableTimes.Add(skill.skillID, startTime);
+                 }
+             }
         }
-
-        // Dispara evento para la UI
         healthSystem?.TriggerInitialHealthChangedEvent();
-
-        // Actualiza velocidad de AIPath ahora que las stats están listas
-        if (aiPath != null)
-        {
-            aiPath.maxSpeed = baseMovementSpeed;
-        }
-
-        Debug.Log($"[{gameObject.name}] Initialized. HP: {currentHealth}/{baseMaxHealth}, Stam: {currentStamina}/{baseMaxStamina}, Speed: {baseMovementSpeed}");
+        if (aiPath != null) aiPath.maxSpeed = baseMovementSpeed;
+        // Debug.Log($"[{gameObject.name}] Initialized. HP: {currentHealth}/{baseMaxHealth}, Speed: {baseMovementSpeed}"); // Comentado log
     }
 
-    void RegenerateStamina(float deltaTime)
-    {
+    void RegenerateStamina(float deltaTime) {
         currentStamina += baseStaminaRegenRate * deltaTime;
         currentStamina = Mathf.Min(currentStamina, baseMaxStamina);
     }
 
-    public bool ConsumeStamina(float amount)
-    {
+    public bool ConsumeStamina(float amount) {
         if (amount <= 0) return true;
-        if (currentStamina >= amount)
-        {
-            currentStamina -= amount;
-            return true;
-        }
+        if (currentStamina >= amount) { currentStamina -= amount; return true; }
         return false;
     }
 
-    // --- Checks de Cooldown ---
     public bool IsAttackReady() => Time.time >= attackAvailableTime;
     public bool IsDashReady() => Time.time >= dashAvailableTime;
     public bool IsParryReady() => Time.time >= parryAvailableTime;
-    public bool IsSkillReady(SkillData skill)
-    {
+    public bool IsSkillReady(SkillData skill) {
         if (skill == null) return false;
         return skillAvailableTimes.TryGetValue(skill.skillID, out float availableTime) && Time.time >= availableTime;
     }
 
-    // --- Poner en Cooldown ---
-    // Attack cooldown se establece desde CharacterCombat usando attackAvailableTime
     public void PutDashOnCooldown() { dashAvailableTime = Time.time + baseDashCooldown; }
     public void PutParryOnCooldown() { parryAvailableTime = Time.time + baseParryCooldown; }
-    public void PutSkillOnCooldown(SkillData skill)
-    {
-        if (skill != null && learnedSkills.Contains(skill)) // Verifica si la habilidad está aprendida
-        {
-            if (!skillAvailableTimes.ContainsKey(skill.skillID))
-            {
-                 // Añade la habilidad al diccionario si no estaba (puede pasar si se aprende en runtime)
-                 skillAvailableTimes.Add(skill.skillID, Time.time + skill.cooldown);
-            } else {
-                 skillAvailableTimes[skill.skillID] = Time.time + skill.cooldown;
-            }
-        }
-         else if (skill != null)
-        {
-             Debug.LogWarning($"Tried to put skill '{skill.skillName}' on cooldown, but it's not in the learned skills list for {gameObject.name}");
-        }
+    public void PutSkillOnCooldown(SkillData skill) {
+        if (skill != null && learnedSkills != null && learnedSkills.Contains(skill)) { // Chequea si está aprendida
+            if (!skillAvailableTimes.ContainsKey(skill.skillID)) skillAvailableTimes.Add(skill.skillID, Time.time + skill.cooldown);
+            else skillAvailableTimes[skill.skillID] = Time.time + skill.cooldown;
+        } else if (skill != null) Debug.LogWarning($"Skill '{skill.skillName}' not learned by {gameObject.name}");
     }
 
-    // --- Setters de Estado ---
     public void SetBlocking(bool state) { if (isStunned && state) return; isBlocking = state; }
     public void SetDashing(bool state) => isDashing = state;
     public void SetInvulnerable(bool state) => isInvulnerable = state;
     public void SetAttemptingParry(bool state) => isAttemptingParry = state;
 
-    // --- Stun ---
-    public void ApplyStun(float duration)
-    {
+    public void ApplyStun(float duration) {
         if (duration <= 0) return;
-        isStunned = true;
-        stunEndTime = Mathf.Max(stunEndTime, Time.time + duration);
+        isStunned = true; stunEndTime = Mathf.Max(stunEndTime, Time.time + duration);
         combatController?.InterruptActions();
-        if (aiPath != null) aiPath.canMove = false; // Detener A*
+        if (aiPath != null) aiPath.canMove = false;
         if (rb != null) rb.linearVelocity = Vector2.zero;
-        SetBlocking(false); SetDashing(false); SetInvulnerable(false); SetAttemptingParry(false); // Limpia todos los estados
-        Debug.Log($"{gameObject.name} STUNNED for {duration}s (until {stunEndTime})");
-        // combatController?.SetAnimatorBool("IsStunned", true); // O trigger
+        SetBlocking(false); SetDashing(false); SetInvulnerable(false); SetAttemptingParry(false);
+        // Debug.Log($"{gameObject.name} STUNNED for {duration}s"); // Comentado log
     }
 
-    void CheckStunEnd()
-    {
-        if (isStunned && Time.time >= stunEndTime)
-        {
+    void CheckStunEnd() {
+        if (isStunned && Time.time >= stunEndTime) {
             isStunned = false;
-            if (aiPath != null) aiPath.canMove = true; // Permite que la IA decida moverse
-            Debug.Log($"{gameObject.name} NO LONGER stunned.");
-            // combatController?.SetAnimatorBool("IsStunned", false);
+            if (aiPath != null) aiPath.canMove = true;
+            // Debug.Log($"{gameObject.name} NO LONGER stunned."); // Comentado log
         }
     }
 
-    // --- Vida ---
-    public void RestoreHealth(float amount)
-    {
+    public void RestoreHealth(float amount) {
         if (amount <= 0) return;
-        currentHealth += amount;
-        currentHealth = Mathf.Clamp(currentHealth, 0, baseMaxHealth);
-        healthSystem?.TriggerInitialHealthChangedEvent(); // Notifica cambio a UI
+        currentHealth += amount; currentHealth = Mathf.Clamp(currentHealth, 0, baseMaxHealth);
+        healthSystem?.TriggerInitialHealthChangedEvent();
     }
     public void RestoreFullHealth() { RestoreHealth(baseMaxHealth); }
-
-    public void SetCurrentHealth(float value)
-    {
+    public void SetCurrentHealth(float value) {
         currentHealth = Mathf.Clamp(value, 0, baseMaxHealth);
-         healthSystem?.TriggerInitialHealthChangedEvent(); // Notifica cambio a UI
+        healthSystem?.TriggerInitialHealthChangedEvent();
     }
 
-     // --- Copiar Datos (Para Carga/Instanciación) ---
-     public void CopyFrom(CharacterData source)
-     {
-         if (source == null) { Debug.LogError("Source CharacterData is null in CopyFrom!"); return; }
+    // Aplica datos desde el SaveData cargado
+    // *** USA EL TIPO PÚBLICO SaveLoadSystem.CharacterSaveData ***
+    public void ApplySaveData(SaveLoadSystem.CharacterSaveData saveData) // <<<--- CORRECCIÓN TIPO PARÁMETRO
+    {
+        if (saveData == null) { Debug.LogError($"ApplySaveData Error: saveData null for {gameObject.name}!"); return; }
 
-         this.baseMaxHealth = source.baseMaxHealth;
-         this.baseMovementSpeed = source.baseMovementSpeed;
-         this.baseAttackDamage = source.baseAttackDamage;
-         this.baseAttackRange = source.baseAttackRange;
-         this.baseAttackCooldown = source.baseAttackCooldown;
-         this.baseMaxStamina = source.baseMaxStamina;
-         this.baseStaminaRegenRate = source.baseStaminaRegenRate;
-         this.baseDashSpeedMult = source.baseDashSpeedMult;
-         this.baseDashDuration = source.baseDashDuration;
-         this.baseDashCost = source.baseDashCost;
-         this.baseDashCooldown = source.baseDashCooldown;
-         this.baseDashInvulnerabilityDuration = source.baseDashInvulnerabilityDuration;
-         this.baseBlockStaminaDrain = source.baseBlockStaminaDrain;
-         this.baseBlockDamageMultiplier = source.baseBlockDamageMultiplier;
-         this.baseBlockSuccessStaminaCostMult = source.baseBlockSuccessStaminaCostMult;
-         this.baseBlockSpeedMultiplier = source.baseBlockSpeedMultiplier;
-         this.baseParryWindow = source.baseParryWindow;
-         this.baseParryStunDuration = source.baseParryStunDuration;
-         this.baseParryCost = source.baseParryCost;
-         this.baseParryCooldown = source.baseParryCooldown;
-         this.level = source.level;
-         this.currentXP = source.currentXP;
-         this.xpToNextLevel = source.xpToNextLevel;
-         this.equippedWeapon = source.equippedWeapon;
-         this.learnedSkills = new List<SkillData>(source.learnedSkills);
+        // Copia Stats Base
+        this.baseMaxHealth = saveData.baseMaxHealth; this.baseMovementSpeed = saveData.baseMovementSpeed; this.baseAttackDamage = saveData.baseAttackDamage;
+        this.baseAttackRange = saveData.baseAttackRange; this.baseAttackCooldown = saveData.baseAttackCooldown; this.baseMaxStamina = saveData.baseMaxStamina;
+        this.baseStaminaRegenRate = saveData.baseStaminaRegenRate; this.baseDashSpeedMult = saveData.baseDashSpeedMult; this.baseDashDuration = saveData.baseDashDuration;
+        this.baseDashCost = saveData.baseDashCost; this.baseDashCooldown = saveData.baseDashCooldown; this.baseDashInvulnerabilityDuration = saveData.baseDashInvulnerabilityDuration;
+        this.baseBlockStaminaDrain = saveData.baseBlockStaminaDrain; this.baseBlockDamageMultiplier = saveData.baseBlockDamageMultiplier; this.baseBlockSuccessStaminaCostMult = saveData.baseBlockSuccessStaminaCostMult;
+        this.baseBlockSpeedMultiplier = saveData.baseBlockSpeedMultiplier; this.baseParryWindow = saveData.baseParryWindow; this.baseParryStunDuration = saveData.baseParryStunDuration;
+        this.baseParryCost = saveData.baseParryCost; this.baseParryCooldown = saveData.baseParryCooldown;
+        // Copia Progresión
+        this.level = saveData.level; this.currentXP = saveData.currentXP; this.xpToNextLevel = saveData.xpToNextLevel;
 
-         Debug.Log($"Copied data from {source.name} to {this.name}. Weapon: {this.equippedWeapon?.weaponName ?? "None"}, Lvl: {this.level}");
-     }
+        // Carga Arma desde Resources
+        this.equippedWeapon = null;
+        if (!string.IsNullOrEmpty(saveData.equippedWeaponAssetName)) {
+            this.equippedWeapon = Resources.Load<WeaponData>("Weapons/" + saveData.equippedWeaponAssetName);
+            if (this.equippedWeapon == null) Debug.LogWarning($"[{gameObject.name}] Failed to load weapon '{saveData.equippedWeaponAssetName}'");
+        }
+
+        // Carga Skills desde Resources
+        this.learnedSkills = new List<SkillData>();
+        if (saveData.learnedSkillAssetNames != null) {
+            foreach (string skillName in saveData.learnedSkillAssetNames) {
+                 if (!string.IsNullOrEmpty(skillName)) {
+                     SkillData skill = Resources.Load<SkillData>("Skills/" + skillName);
+                     if (skill != null) this.learnedSkills.Add(skill);
+                     else Debug.LogWarning($"[{gameObject.name}] Failed to load skill '{skillName}'");
+                 }
+            }
+        }
+        // Debug.Log($"Applied save data to {gameObject.name}. Weapon: {this.equippedWeapon?.weaponName ?? "None"}, Lvl: {this.level}"); // Comentado log
+        // InitializeResourcesAndCooldowns() se llama DESPUÉS desde BattleManager
+    }
 }

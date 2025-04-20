@@ -1,15 +1,12 @@
 using UnityEngine;
-using System.IO; // Necesario para trabajar con archivos
-using System.Collections.Generic; // Necesario para listas
+using System.IO;
+using System.Collections.Generic;
 
-// Clase estática: No se puede instanciar, se accede directamente a sus métodos.
 public static class SaveLoadSystem
 {
-    // Clase interna para guardar/cargar datos fácilmente con JsonUtility
-    // JsonUtility no serializa directamente MonoBehaviours (como CharacterData)
-    // ni ScriptableObjects referenciados directamente dentro de ellos de forma fiable.
+    // Clase interna para guardar/cargar datos - AHORA PÚBLICA
     [System.Serializable]
-    private class CharacterSaveData
+    public class CharacterSaveData // <<<--- CORRECCIÓN: 'public' añadido
     {
         // Stats Base
         public float baseMaxHealth;
@@ -32,36 +29,26 @@ public static class SaveLoadSystem
         public float baseParryStunDuration;
         public float baseParryCost;
         public float baseParryCooldown;
-
         // Progresión
         public int level;
         public float currentXP;
         public float xpToNextLevel;
-
-        // Equipo y Habilidades (Guardamos los NOMBRES de los assets)
-        public string equippedWeaponAssetName; // Nombre del archivo .asset del arma
-        public List<string> learnedSkillAssetNames; // Lista de nombres de archivos .asset de skills
+        // Equipo y Habilidades (Nombres de assets)
+        public string equippedWeaponAssetName;
+        public List<string> learnedSkillAssetNames;
     }
 
-    // Devuelve la ruta completa del archivo de guardado
     private static string GetSavePath(string characterID)
     {
-        // Application.persistentDataPath es una carpeta segura y estándar para guardar datos
         return Path.Combine(Application.persistentDataPath, characterID + ".json");
     }
 
-    // Guarda los datos de un CharacterData a un archivo JSON
     public static void SaveCharacter(CharacterData data, string characterID)
     {
-        if (data == null)
-        {
-            Debug.LogError($"Cannot save character {characterID}: CharacterData is null!");
-            return;
-        }
+        if (data == null) { Debug.LogError($"Save Error: CharacterData for {characterID} is null!"); return; }
 
         CharacterSaveData saveData = new CharacterSaveData();
-
-        // Copia los datos del CharacterData al objeto serializable
+        // Copia de MonoBehaviour -> SaveData
         saveData.baseMaxHealth = data.baseMaxHealth;
         saveData.baseMovementSpeed = data.baseMovementSpeed;
         saveData.baseAttackDamage = data.baseAttackDamage;
@@ -85,38 +72,21 @@ public static class SaveLoadSystem
         saveData.level = data.level;
         saveData.currentXP = data.currentXP;
         saveData.xpToNextLevel = data.xpToNextLevel;
-
-        // Guarda el nombre del asset del arma equipada
         saveData.equippedWeaponAssetName = data.equippedWeapon != null ? data.equippedWeapon.name : null;
-
-        // Guarda los nombres de los assets de las habilidades aprendidas
         saveData.learnedSkillAssetNames = new List<string>();
-        foreach (SkillData skill in data.learnedSkills)
+        if (data.learnedSkills != null) // Añadido chequeo null para seguridad
         {
-            if (skill != null)
-            {
-                saveData.learnedSkillAssetNames.Add(skill.name);
-            }
+             foreach (SkillData skill in data.learnedSkills) { if (skill != null) saveData.learnedSkillAssetNames.Add(skill.name); }
         }
 
-        // Convierte a JSON y guarda en archivo
-        string json = JsonUtility.ToJson(saveData, true); // true para formato legible
+        string json = JsonUtility.ToJson(saveData, true);
         string path = GetSavePath(characterID);
-        try
-        {
-            File.WriteAllText(path, json);
-            Debug.Log($"Saved character {characterID} to {path}");
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogError($"Failed to save character {characterID} to {path}: {e.Message}");
-        }
+        try { File.WriteAllText(path, json); /*Debug.Log($"Saved {characterID} to {path}");*/ }
+        catch (System.Exception e) { Debug.LogError($"Save Failed for {characterID}: {e.Message}"); }
     }
 
-    // Carga los datos de un personaje desde un archivo JSON
-    // Devuelve un CharacterData TEMPORAL con los datos cargados.
-    // ¡ESTE NO ES EL COMPONENTE DE LA ESCENA!
-    public static CharacterData LoadCharacterData(string characterID)
+    // Devuelve el objeto CharacterSaveData cargado del JSON
+    public static CharacterSaveData LoadCharacterSaveData(string characterID)
     {
         string path = GetSavePath(characterID);
         if (File.Exists(path))
@@ -125,128 +95,71 @@ public static class SaveLoadSystem
             {
                 string json = File.ReadAllText(path);
                 CharacterSaveData loadedSaveData = JsonUtility.FromJson<CharacterSaveData>(json);
-
-                // Crea una INSTANCIA TEMPORAL de CharacterData (no es un componente)
-                // Usamos ScriptableObject.CreateInstance para esto, aunque sea MonoBehaviour,
-                // porque no queremos añadirlo a la escena aquí.
-                CharacterData loadedCharacterData = ScriptableObject.CreateInstance<CharacterData>();
-
-                // Copia los datos del objeto cargado a la instancia temporal
-                loadedCharacterData.baseMaxHealth = loadedSaveData.baseMaxHealth;
-                loadedCharacterData.baseMovementSpeed = loadedSaveData.baseMovementSpeed;
-                loadedCharacterData.baseAttackDamage = loadedSaveData.baseAttackDamage;
-                // ... copia TODAS las demás stats base ...
-                loadedCharacterData.baseAttackRange = loadedSaveData.baseAttackRange;
-                 loadedCharacterData.baseAttackCooldown = loadedSaveData.baseAttackCooldown;
-                 loadedCharacterData.baseMaxStamina = loadedSaveData.baseMaxStamina;
-                 loadedCharacterData.baseStaminaRegenRate = loadedSaveData.baseStaminaRegenRate;
-                 loadedCharacterData.baseDashSpeedMult = loadedSaveData.baseDashSpeedMult;
-                 loadedCharacterData.baseDashDuration = loadedSaveData.baseDashDuration;
-                 loadedCharacterData.baseDashCost = loadedSaveData.baseDashCost;
-                 loadedCharacterData.baseDashCooldown = loadedSaveData.baseDashCooldown;
-                 loadedCharacterData.baseDashInvulnerabilityDuration = loadedSaveData.baseDashInvulnerabilityDuration;
-                 loadedCharacterData.baseBlockStaminaDrain = loadedSaveData.baseBlockStaminaDrain;
-                 loadedCharacterData.baseBlockDamageMultiplier = loadedSaveData.baseBlockDamageMultiplier;
-                 loadedCharacterData.baseBlockSuccessStaminaCostMult = loadedSaveData.baseBlockSuccessStaminaCostMult;
-                 loadedCharacterData.baseBlockSpeedMultiplier = loadedSaveData.baseBlockSpeedMultiplier;
-                 loadedCharacterData.baseParryWindow = loadedSaveData.baseParryWindow;
-                 loadedCharacterData.baseParryStunDuration = loadedSaveData.baseParryStunDuration;
-                 loadedCharacterData.baseParryCost = loadedSaveData.baseParryCost;
-                 loadedCharacterData.baseParryCooldown = loadedSaveData.baseParryCooldown;
-
-                loadedCharacterData.level = loadedSaveData.level;
-                loadedCharacterData.currentXP = loadedSaveData.currentXP;
-                loadedCharacterData.xpToNextLevel = loadedSaveData.xpToNextLevel;
-
-                // Carga el asset del arma usando el nombre guardado
-                if (!string.IsNullOrEmpty(loadedSaveData.equippedWeaponAssetName))
-                {
-                    // Resources.Load busca en CUALQUIER carpeta llamada "Resources" dentro de Assets
-                    // ¡Asegúrate de que tus WeaponData assets estén en una carpeta "Resources/Weapons"!
-                    loadedCharacterData.equippedWeapon = Resources.Load<WeaponData>("Weapons/" + loadedSaveData.equippedWeaponAssetName);
-                    if (loadedCharacterData.equippedWeapon == null)
-                    {
-                        Debug.LogWarning($"Could not load weapon asset named '{loadedSaveData.equippedWeaponAssetName}' from Resources/Weapons folder for character {characterID}.");
-                    }
-                }
-
-                // Carga los assets de las habilidades aprendidas
-                loadedCharacterData.learnedSkills = new List<SkillData>();
-                foreach (string skillName in loadedSaveData.learnedSkillAssetNames)
-                {
-                    // ¡Asegúrate de que tus SkillData assets estén en una carpeta "Resources/Skills"!
-                    SkillData skill = Resources.Load<SkillData>("Skills/" + skillName);
-                    if (skill != null)
-                    {
-                        loadedCharacterData.learnedSkills.Add(skill);
-                    }
-                    else
-                    {
-                        Debug.LogWarning($"Could not load skill asset named '{skillName}' from Resources/Skills folder for character {characterID}.");
-                    }
-                }
-
-                Debug.Log($"Loaded character data for {characterID}");
-                return loadedCharacterData; // Devuelve la instancia temporal con los datos
+                /*Debug.Log($"Loaded save data for {characterID}");*/
+                return loadedSaveData;
             }
             catch (System.Exception e)
             {
-                Debug.LogError($"Failed to load character {characterID} from {path}: {e.Message}");
+                Debug.LogError($"Load Failed for {characterID}: {e.Message}");
                 return null;
             }
         }
-        else
-        {
-            // Archivo no encontrado, no es necesariamente un error la primera vez
-            // Debug.LogWarning($"Save file not found for {characterID} at {path}. Returning null.");
-            return null;
-        }
+        else { return null; }
     }
 
-    // Carga datos o crea un personaje por defecto si no existe archivo
-    public static CharacterData LoadOrCreateDefaultCharacterData(string characterID, WeaponData defaultWeapon)
+    // Carga o crea y guarda datos por defecto, devolviendo CharacterSaveData
+    public static CharacterSaveData LoadOrCreateDefaultCharacterSaveData(string characterID, WeaponData defaultWeapon)
     {
-         CharacterData loadedData = LoadCharacterData(characterID);
-         if (loadedData != null)
-         {
-             return loadedData; // Devuelve los datos cargados
-         }
+         CharacterSaveData loadedData = LoadCharacterSaveData(characterID);
+         if (loadedData != null) { return loadedData; }
          else
          {
-             Debug.Log($"Creating default character data for {characterID}");
-             // Crea una nueva instancia TEMPORAL de CharacterData
-             CharacterData defaultData = ScriptableObject.CreateInstance<CharacterData>();
+             Debug.Log($"Creating default save data for {characterID}");
+             CharacterSaveData defaultSaveData = new CharacterSaveData();
+             // Configura stats defecto
+             defaultSaveData.baseMaxHealth = 100f; defaultSaveData.baseMovementSpeed = 5f; defaultSaveData.baseAttackDamage = 10f;
+             defaultSaveData.baseAttackRange = 1f; defaultSaveData.baseAttackCooldown = 1f; defaultSaveData.baseMaxStamina = 100f;
+             defaultSaveData.baseStaminaRegenRate = 15f; defaultSaveData.baseDashSpeedMult = 5f; defaultSaveData.baseDashDuration = 0.2f;
+             defaultSaveData.baseDashCost = 20f; defaultSaveData.baseDashCooldown = 1.5f; defaultSaveData.baseDashInvulnerabilityDuration = 0.2f;
+             defaultSaveData.baseBlockStaminaDrain = 10f; defaultSaveData.baseBlockDamageMultiplier = 0.25f; defaultSaveData.baseBlockSuccessStaminaCostMult = 0.1f;
+             defaultSaveData.baseBlockSpeedMultiplier = 0.5f; defaultSaveData.baseParryWindow = 0.15f; defaultSaveData.baseParryStunDuration = 1.0f;
+             defaultSaveData.baseParryCost = 30f; defaultSaveData.baseParryCooldown = 2.0f; defaultSaveData.level = 1;
+             defaultSaveData.currentXP = 0; defaultSaveData.xpToNextLevel = 100; defaultSaveData.equippedWeaponAssetName = defaultWeapon?.name;
+             defaultSaveData.learnedSkillAssetNames = new List<string>();
 
-             // --- Configura stats iniciales POR DEFECTO ---
-             defaultData.baseMaxHealth = 100f;
-             defaultData.baseMovementSpeed = 5f;
-             defaultData.baseAttackDamage = 10f;
-             defaultData.baseAttackRange = 1f;
-             defaultData.baseAttackCooldown = 1f;
-             defaultData.baseMaxStamina = 100f;
-             defaultData.baseStaminaRegenRate = 15f;
-             defaultData.baseDashSpeedMult = 5f;
-             defaultData.baseDashDuration = 0.2f;
-             defaultData.baseDashCost = 20f;
-             defaultData.baseDashCooldown = 1.5f;
-             defaultData.baseDashInvulnerabilityDuration = 0.2f;
-             defaultData.baseBlockStaminaDrain = 10f;
-             defaultData.baseBlockDamageMultiplier = 0.25f;
-             defaultData.baseBlockSuccessStaminaCostMult = 0.1f;
-             defaultData.baseBlockSpeedMultiplier = 0.5f;
-             defaultData.baseParryWindow = 0.15f;
-             defaultData.baseParryStunDuration = 1.0f;
-             defaultData.baseParryCost = 30f;
-             defaultData.baseParryCooldown = 2.0f;
-             defaultData.level = 1;
-             defaultData.currentXP = 0;
-             defaultData.xpToNextLevel = 100;
-             defaultData.equippedWeapon = defaultWeapon; // Asigna el arma por defecto
-             defaultData.learnedSkills = new List<SkillData>(); // Empieza sin skills
+             // Guarda este SaveData por defecto en JSON (usando un CharacterData temporal)
+             CharacterData tempDataForSaving = ScriptableObject.CreateInstance<CharacterData>(); // Crea temporal
+             // Asigna valores al temporal DESDE el defaultSaveData
+             tempDataForSaving.baseMaxHealth = defaultSaveData.baseMaxHealth;
+             tempDataForSaving.baseMovementSpeed = defaultSaveData.baseMovementSpeed;
+             tempDataForSaving.baseAttackDamage = defaultSaveData.baseAttackDamage;
+             tempDataForSaving.baseAttackRange = defaultSaveData.baseAttackRange;
+             tempDataForSaving.baseAttackCooldown = defaultSaveData.baseAttackCooldown;
+             tempDataForSaving.baseMaxStamina = defaultSaveData.baseMaxStamina;
+             tempDataForSaving.baseStaminaRegenRate = defaultSaveData.baseStaminaRegenRate;
+             tempDataForSaving.baseDashSpeedMult = defaultSaveData.baseDashSpeedMult;
+             tempDataForSaving.baseDashDuration = defaultSaveData.baseDashDuration;
+             tempDataForSaving.baseDashCost = defaultSaveData.baseDashCost;
+             tempDataForSaving.baseDashCooldown = defaultSaveData.baseDashCooldown;
+             tempDataForSaving.baseDashInvulnerabilityDuration = defaultSaveData.baseDashInvulnerabilityDuration;
+             tempDataForSaving.baseBlockStaminaDrain = defaultSaveData.baseBlockStaminaDrain;
+             tempDataForSaving.baseBlockDamageMultiplier = defaultSaveData.baseBlockDamageMultiplier;
+             tempDataForSaving.baseBlockSuccessStaminaCostMult = defaultSaveData.baseBlockSuccessStaminaCostMult;
+             tempDataForSaving.baseBlockSpeedMultiplier = defaultSaveData.baseBlockSpeedMultiplier;
+             tempDataForSaving.baseParryWindow = defaultSaveData.baseParryWindow;
+             tempDataForSaving.baseParryStunDuration = defaultSaveData.baseParryStunDuration;
+             tempDataForSaving.baseParryCost = defaultSaveData.baseParryCost;
+             tempDataForSaving.baseParryCooldown = defaultSaveData.baseParryCooldown;
+             tempDataForSaving.level = defaultSaveData.level;
+             tempDataForSaving.currentXP = defaultSaveData.currentXP;
+             tempDataForSaving.xpToNextLevel = defaultSaveData.xpToNextLevel;
+             tempDataForSaving.equippedWeapon = defaultWeapon; // Asigna el objeto SO
+             tempDataForSaving.learnedSkills = new List<SkillData>(); // Lista vacía
 
-             // Guarda este nuevo personaje por defecto para la próxima vez
-             SaveCharacter(defaultData, characterID);
-             return defaultData; // Devuelve los datos por defecto
+             SaveCharacter(tempDataForSaving, characterID); // Llama a guardar
+             Object.Destroy(tempDataForSaving); // Destruye el temporal
+
+             return defaultSaveData;
          }
     }
 }
