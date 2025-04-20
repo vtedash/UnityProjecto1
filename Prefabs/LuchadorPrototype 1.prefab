@@ -277,6 +277,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cadf3b9e452713b4fa03aa39a32f256a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  currentState: 0
   enemyTag: Player
   pathUpdateRate: 0.5
   decisionInterval: 0.2
@@ -288,6 +289,7 @@ MonoBehaviour:
   parryPreference: 0.3
   dodgePreference: 0.5
   jumpThresholdY: 1.5
+  jumpObstacleCheckDistance: 1
   horizontalAcceleration: 15
 --- !u!114 &5848798992343309118
 MonoBehaviour:
@@ -324,7 +326,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7848808146084690019}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f6eb1402c17e84a9282a7f0f62eb584f, type: 3}
   m_Name: 
@@ -332,7 +334,7 @@ MonoBehaviour:
   version: 5
   radius: 0.5
   height: 2
-  canMove: 1
+  canMove: 0
   maxSpeed: 1
   gravity: {x: NaN, y: NaN, z: NaN}
   groundMask:
