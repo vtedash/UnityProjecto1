@@ -12,8 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c792dc126b46dfd4db108d3c25b2b337, type: 3}
   m_Name: Stick
   m_EditorClassIdentifier: 
-  weaponName: Default Weapon
+  weaponName: Stick
   weaponSprite: {fileID: 0}
-  attackDamageMultiplier: 1
-  attackRangeMultiplier: 1
-  attackCooldownMultiplier: 1
+  attackDamageMultiplier: 0.9
+  attackRangeMultiplier: 1.5
+  attackCooldownMultiplier: 1.1

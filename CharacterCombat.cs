@@ -521,15 +521,14 @@ public class CharacterCombat : MonoBehaviour
     public void SetAnimatorFloat(string name, float value) { if (HasParameter(name, animator)) animator.SetFloat(name, value); }
     public void SetAnimatorTrigger(string name) { if (HasParameter(name, animator)) animator.SetTrigger(name); }
 
-    // CORREGIDO: Añadido return false;
     private bool HasParameter(string paramName, Animator animatorToCheck)
+{
+    if (animatorToCheck == null || string.IsNullOrEmpty(paramName) || animatorToCheck.runtimeAnimatorController == null) return false;
+    foreach (AnimatorControllerParameter param in animatorToCheck.parameters)
     {
-        if (animatorToCheck == null || string.IsNullOrEmpty(paramName) || animatorToCheck.runtimeAnimatorController == null) return false;
-        foreach (AnimatorControllerParameter param in animatorToCheck.parameters)
-        {
-            if (param.name == paramName) return true;
-        }
-        // Si el bucle termina sin encontrarlo, devuelve false
-        return false;
+        if (param.name == paramName) return true; // Devuelve true si lo encuentra
     }
+    // Si el bucle termina sin encontrarlo, devuelve false
+    return false; // <<<--- ASEGÚRATE DE QUE ESTA LÍNEA EXISTE
+}
 }

@@ -204,10 +204,36 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1d8d88bd1cf17ab4ba6061ed41c1b39c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  baseStats: {fileID: 11400000, guid: d9b76d7977f2c0a4e96847c866aaf6f8, type: 2}
-  skills: []
+  baseMaxHealth: 100
+  baseMovementSpeed: 5
+  baseAttackDamage: 10
+  baseAttackRange: 1
+  baseAttackCooldown: 1
+  baseMaxStamina: 100
+  baseStaminaRegenRate: 15
+  baseDashSpeedMult: 5
+  baseDashDuration: 0.2
+  baseDashCost: 20
+  baseDashCooldown: 1.5
+  baseDashInvulnerabilityDuration: 0.2
+  baseBlockStaminaDrain: 10
+  baseBlockDamageMultiplier: 0.25
+  baseBlockSuccessStaminaCostMult: 0.1
+  baseBlockSpeedMultiplier: 0.5
+  baseParryWindow: 0.15
+  baseParryStunDuration: 1
+  baseParryCost: 30
+  baseParryCooldown: 2
+  level: 1
+  currentXP: 0
+  xpToNextLevel: 100
+  equippedWeapon: {fileID: 11400000, guid: 38dcd9cbbc2fed244b734c1c30d1eeb5, type: 2}
+  learnedSkills: []
   _currentHealth: 0
   _currentStamina: 0
+  attackAvailableTime: 0
+  dashAvailableTime: 0
+  parryAvailableTime: 0
 --- !u!114 &8396238759496316715
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -233,6 +259,9 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   OnDodgedDamage:
+    m_PersistentCalls:
+      m_Calls: []
+  OnHealthChanged:
     m_PersistentCalls:
       m_Calls: []
 --- !u!114 &4875144321302999932

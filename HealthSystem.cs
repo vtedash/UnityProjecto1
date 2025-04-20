@@ -129,7 +129,7 @@ public class HealthSystem : MonoBehaviour
         if (col != null) col.enabled = false;
 
         Rigidbody2D rb = GetComponent<Rigidbody2D>();
-        if (rb != null) { rb.simulated = false; rb.velocity = Vector2.zero; rb.angularVelocity = 0f;}
+        if (rb != null) { rb.simulated = false; rb.linearVelocity = Vector2.zero; rb.angularVelocity = 0f;}
 
         Animator animator = GetComponent<Animator>();
         animator?.SetTrigger("Die");
