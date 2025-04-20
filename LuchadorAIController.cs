@@ -1,3 +1,4 @@
+// File: LuchadorAIController.cs (Renombrado desde BrutoAIController.cs)
 using UnityEngine;
 using Pathfinding;
 using System.Collections;
@@ -11,7 +12,8 @@ using Random = UnityEngine.Random;
 [RequireComponent(typeof(CharacterData))]
 [RequireComponent(typeof(Rigidbody2D))]
 
-public class BrutoAIController : MonoBehaviour
+// --- CAMBIO: Nombre de la clase ---
+public class LuchadorAIController : MonoBehaviour
 {
     [Header("Targeting & Team")]
     [Tooltip("Tag del equipo enemigo a buscar")]

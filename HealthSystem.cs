@@ -1,3 +1,4 @@
+// File: HealthSystem.cs
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -76,7 +77,6 @@ public class HealthSystem : MonoBehaviour
              OnDamageTaken?.Invoke(finalDamage);
 
              Animator animator = GetComponent<Animator>();
-             // *** CORRECCIÓN AQUÍ: Usar ?. para llamada segura ***
              if (!wasBlocked) animator?.SetTrigger("Hit");
         }
         else if (wasBlocked) {
@@ -100,7 +100,6 @@ public class HealthSystem : MonoBehaviour
     public void RestoreHealth(float amount)
     {
          if (characterData == null || amount <= 0 || isDying) return; // No curar si está muriendo
-         // Solo curar si no está ya al máximo
          if (characterData.currentHealth < characterData.baseStats.maxHealth)
          {
              characterData.RestoreHealth(amount);
@@ -111,30 +110,25 @@ public class HealthSystem : MonoBehaviour
 
     private void Die(GameObject killer)
     {
-        // *** LÓGICA DE MUERTE CORREGIDA ***
-        // 1. Poner flag para evitar reentrada
         if (isDying) return;
         isDying = true;
-
-        // 2. Asegurar que la vida esté en 0 (aunque ya debería estarlo)
         characterData.SetCurrentHealth(0);
 
         Debug.Log($"Die() method EXECUTING for {gameObject.name}.");
         Debug.Log($"{gameObject.name} ha muerto (Asesino: {killer?.name ?? "Entorno/Desconocido"}).");
 
-        // 3. Invocar el evento ANTES de desactivar cosas
         Debug.Log($"Attempting to invoke OnDeath for {gameObject.name}...");
         OnDeath?.Invoke();
         Debug.Log($"OnDeath invoked for {gameObject.name}.");
 
-        // 4. Desactivar componentes principales
         CharacterCombat combat = GetComponent<CharacterCombat>();
         if (combat != null) combat.enabled = false;
 
         Pathfinding.AIPath aiPath = GetComponent<Pathfinding.AIPath>();
-        if (aiPath != null) aiPath.canMove = false; // Asegurar que se detenga
+        if (aiPath != null) aiPath.canMove = false;
 
-        BrutoAIController aiController = GetComponent<BrutoAIController>();
+        // --- CAMBIO: Tipo de componente a buscar ---
+        LuchadorAIController aiController = GetComponent<LuchadorAIController>();
         if (aiController != null) aiController.enabled = false; // Desactivar IA
 
         Collider2D col = GetComponent<Collider2D>();
@@ -143,19 +137,15 @@ public class HealthSystem : MonoBehaviour
         Rigidbody2D rb = GetComponent<Rigidbody2D>();
         if (rb != null) rb.simulated = false;
 
-        // 5. Trigger animación de muerte (con chequeo)
         Animator animator = GetComponent<Animator>();
-        // *** CORRECCIÓN AQUÍ: Usar ?. para llamada segura ***
         animator?.SetTrigger("Die");
 
-        // 6. Programar destrucción
         Destroy(gameObject, 3.0f);
         Debug.Log($"Destroy scheduled for {gameObject.name}");
     }
 
     public bool IsAlive()
     {
-        // Considerar que no está vivo si está en proceso de morir
         return characterData != null && characterData.currentHealth > 0 && !isDying;
     }
 }

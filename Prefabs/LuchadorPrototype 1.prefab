@@ -52,7 +52,7 @@ GameObject:
   - component: {fileID: 6232254947427228995}
   - component: {fileID: 7092698715629405549}
   m_Layer: 0
-  m_Name: BrutoPrototype 1
+  m_Name: LuchadorPrototype 1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
