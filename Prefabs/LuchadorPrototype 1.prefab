@@ -141,7 +141,7 @@ Rigidbody2D:
   m_Simulated: 1
   m_UseFullKinematicContacts: 0
   m_UseAutoMass: 0
-  m_Mass: 1
+  m_Mass: 10
   m_LinearDamping: 0
   m_AngularDamping: 0.05
   m_GravityScale: 1
@@ -287,11 +287,7 @@ MonoBehaviour:
   lowHealthThreshold: 0.3
   parryPreference: 0.3
   dodgePreference: 0.5
-  groundCheckPoint: {fileID: 0}
-  groundCheckRadius: 0.2
-  groundLayer:
-    serializedVersion: 2
-    m_Bits: 0
+  jumpThresholdY: 1.5
 --- !u!114 &5848798992343309118
 MonoBehaviour:
   m_ObjectHideFlags: 0

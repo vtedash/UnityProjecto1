@@ -1,3 +1,4 @@
+// File: CharacterMovement.cs
 using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody2D))]
@@ -6,10 +7,7 @@ public class CharacterMovement : MonoBehaviour
 {
     private Rigidbody2D rb;
     private CharacterData characterData;
-    private Transform target;
-    private bool canMove = true;
 
-    // --- NUEVAS VARIABLES PARA SALTO Y GROUND CHECK ---
     [Header("Jumping & Ground Check")]
     public float jumpForce = 10f;          // Fuerza del salto (ajustar en Inspector)
     public Transform groundCheckPoint;    // Un GameObject vacío hijo, posicionado a los pies del personaje
@@ -17,125 +15,79 @@ public class CharacterMovement : MonoBehaviour
     public LayerMask groundLayer;         // Qué capas se consideran suelo (asignar "Ground" en Inspector)
 
     private bool isGrounded;
-    // -------------------------------------------------
-
 
     void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
         characterData = GetComponent<CharacterData>();
 
-        // --- VERIFICACIÓN DEL GROUND CHECK POINT ---
+        // Verificación del Ground Check Point
         if (groundCheckPoint == null)
         {
-            // Intentar encontrarlo si se llama "GroundCheck", si no, crearlo
             Transform foundGroundCheck = transform.Find("GroundCheck");
-            if (foundGroundCheck != null)
-            {
-                groundCheckPoint = foundGroundCheck;
-            }
+            if (foundGroundCheck != null) { groundCheckPoint = foundGroundCheck; }
             else
             {
-                // Crear un GameObject hijo vacío para el ground check
                 GameObject groundCheckObj = new GameObject("GroundCheck");
                 groundCheckObj.transform.SetParent(transform);
-                // Posicionarlo ligeramente por debajo del centro (ajustar según el sprite)
-                groundCheckObj.transform.localPosition = new Vector3(0, -0.5f, 0);
+                groundCheckObj.transform.localPosition = new Vector3(0, -(GetComponent<Collider2D>()?.bounds.extents.y ?? 0.5f) - 0.05f, 0);
                 groundCheckPoint = groundCheckObj.transform;
                 Debug.LogWarning("GroundCheckPoint no asignado en " + gameObject.name + ". Se creó uno automáticamente. Ajusta su posición si es necesario.", this);
             }
         }
-        // -------------------------------------------
+        if (rb == null) Debug.LogError("Rigidbody2D no encontrado!", this);
     }
 
-    void Update() // Ground check es mejor hacerlo en Update o FixedUpdate
+    void Update()
     {
+        // Realizar el chequeo de suelo en Update para tener la info lo más actualizada posible
         CheckIfGrounded();
     }
 
     void FixedUpdate()
     {
-        // --- MOVIMIENTO HORIZONTAL ---
-        // Aplicar movimiento horizontal si podemos y tenemos objetivo
-        if (target != null && canMove)
-        {
-            float horizontalDirection = Mathf.Sign(target.position.x - transform.position.x);
-            // Mantenemos la velocidad vertical actual (gravedad/salto)
-            // y solo modificamos la horizontal.
-            rb.linearVelocity = new Vector2(horizontalDirection * characterData.baseStats.movementSpeed, rb.linearVelocity.y);
-        }
-        // Si no debemos movernos horizontalmente (sin target o canMove=false)
-        // pero sí queremos que la gravedad actúe.
-        else if (!canMove || target == null)
-        {
-             rb.linearVelocity = new Vector2(0, rb.linearVelocity.y); // Detener movimiento horizontal, mantener vertical
-        }
-        // -----------------------------
+        // El movimiento horizontal ahora es controlado por LuchadorAIController.FixedUpdate
+        // Este script ya no necesita gestionar el movimiento horizontal básico.
     }
 
-     // --- NUEVA FUNCIÓN: CHECK IF GROUNDED ---
+    // Verifica si el personaje está tocando el suelo
     private void CheckIfGrounded()
     {
+        if (groundCheckPoint == null || characterData == null || characterData.isStunned) { // Añadido chequeo stun
+            isGrounded = false;
+            return;
+        }
         // Dibuja un círculo en la posición de groundCheckPoint y comprueba si colisiona con groundLayer
         isGrounded = Physics2D.OverlapCircle(groundCheckPoint.position, groundCheckRadius, groundLayer);
     }
-    // ----------------------------------------
 
-    // --- NUEVA FUNCIÓN: JUMP ---
+    // Intenta realizar un salto
     public bool Jump()
     {
-        // Solo saltar si estamos en el suelo y podemos movernos
-        if (isGrounded && canMove)
+        // Solo saltar si estamos en el suelo y no estamos stuneados/dashing/bloqueando
+        if (isGrounded && characterData != null && !characterData.isStunned && !characterData.isDashing && !characterData.isBlocking)
         {
-            rb.linearVelocity = new Vector2(rb.linearVelocity.x, 0f); // Opcional: Resetea velocidad vertical antes de saltar
-            rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
-            // isGrounded se volverá falso automáticamente en el próximo CheckIfGrounded()
-            return true; // Salto realizado
+            if(rb != null) {
+                // Resetear velocidad Y para un salto más consistente
+                rb.linearVelocity = new Vector2(rb.linearVelocity.x, 0f);
+                // Aplicar fuerza vertical
+                rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
+                isGrounded = false; // Asumir que ya no está grounded inmediatamente
+                // animator?.SetTrigger("Jump"); // Trigger animación si existe
+                return true;
+            }
         }
-        return false; // No se pudo saltar (en el aire o movimiento bloqueado)
+        return false;
     }
-    // ---------------------------
 
-    // --- NUEVA FUNCIÓN PÚBLICA: IS GROUNDED ---
-    // Para que la IA pueda consultarlo
+    // Permite a otros scripts consultar si está en el suelo
     public bool IsGrounded()
     {
+        // Devolver el último estado calculado en Update
         return isGrounded;
     }
-    // ----------------------------------------
 
-    // --- MÉTODOS EXISTENTES (SetTarget, StopMovement, ResumeMovement, GetDistanceToTarget) ---
-     public void SetTarget(Transform newTarget)
-    {
-        target = newTarget;
-    }
-
-    public Transform GetTarget()
-    {
-        return target;
-    }
-
-    public void StopMovement() // Ahora solo detiene la capacidad de iniciar movimiento/salto
-    {
-         canMove = false;
-         rb.linearVelocity = new Vector2(0, rb.linearVelocity.y); // Detener solo horizontal
-    }
-
-     public void ResumeMovement()
-    {
-        canMove = true;
-    }
-
-    public float GetDistanceToTarget()
-    {
-        if (target == null) return float.MaxValue;
-        // Considerar solo la distancia horizontal o la distancia total? Por ahora, total.
-        return Vector2.Distance(transform.position, target.position);
-    }
-    // ---------------------------------------------------------------------------------------
-
-
-    // --- OPCIONAL: DIBUJAR GIZMO PARA GROUND CHECK ---
+    // Dibujar Gizmo para Ground Check
     void OnDrawGizmosSelected()
     {
         if (groundCheckPoint != null)
@@ -144,5 +96,4 @@ public class CharacterMovement : MonoBehaviour
             Gizmos.DrawWireSphere(groundCheckPoint.position, groundCheckRadius);
         }
     }
-    // -----------------------------------------------
 }
