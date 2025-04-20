@@ -247,7 +247,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ccd56b34ff1b7dd4a8ced94cdb4f4093, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  jumpForce: 10
+  jumpForce: 60
   groundCheckPoint: {fileID: 7413232090449172121}
   groundCheckRadius: 0.2
   groundLayer:
@@ -288,8 +288,9 @@ MonoBehaviour:
   lowHealthThreshold: 0.3
   parryPreference: 0.3
   dodgePreference: 0.5
-  jumpThresholdY: 1.5
+  jumpUpThresholdY: 1.5
   jumpObstacleCheckDistance: 1
+  maxStuckTime: 1
   horizontalAcceleration: 15
 --- !u!114 &5848798992343309118
 MonoBehaviour:
