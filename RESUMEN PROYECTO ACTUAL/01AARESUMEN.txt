@@ -1,0 +1,71 @@
+# Resumen del Proyecto: Luchador Evolutivo (Inspirado en El Bruto)
+
+## 1. Descripción General del Proyecto
+
+*   Juego de combate 2D en tiempo real desarrollado en Unity.
+*   Núcleo actual: Arena con 2 personajes controlados por IA que combaten usando ataques básicos, dash, bloqueo y parry.
+*   Utiliza A* Pathfinding Project para la navegación 2D en escenarios con plataformas.
+
+## 2. Idea Central y Objetivo Final
+
+*   **Inspiración:** Emular mecánicas clave del juego web "El Bruto".
+*   **Objetivo Principal:** Añadir un sistema de **progresión persistente** donde los personajes:
+    *   Ganan **XP** al luchar.
+    *   **Suben de nivel**.
+    *   Reciben **mejoras aleatorias** (armas, skills, stats).
+*   Crear **gran variedad** de armas y habilidades para personajes únicos.
+*   **Meta a Largo Plazo:** Implementar **PvP asíncrono** (lucha contra "fantasmas" de otros jugadores) gestionado por un **Backend**.
+
+## 3. Estado Actual del Proyecto (Punto Estable)
+
+*   **Combate Funcional:** Ataques básicos, dash, bloqueo, parry operativos. Sistema de salud y estamina implementado.
+*   **Estructura de Datos Refactorizada:**
+    *   `CharacterData` (MonoBehaviour) contiene las **stats base** (evolucionables).
+    *   `WeaponData` (ScriptableObject) define las armas.
+    *   `CharacterData` referencia el `equippedWeapon`.
+    *   El combate usa stats base + modificadores de arma.
+*   **IA Funcional (Base):**
+    *   Máquina de estados (`Idle`, `Searching`, `Chasing`, `Attacking`, etc.).
+    *   Navegación A* funcional en el escenario actual.
+    *   Lógica de persecución (`Chasing`) hasta rango de ataque.
+    *   Lógica de espera (`Idle` o `Chasing` con microajustes) durante cooldowns.
+    *   Reacciona al alejamiento del enemigo.
+    *   Decisiones defensivas básicas (parry/dash/block).
+    *   Lógica de salto básica.
+*   **Sistema de Guardado/Cargado Básico:**
+    *   `SaveLoadSystem` (estático) guarda/carga `CharacterSaveData` (clase interna serializable) en archivos JSON locales.
+    *   Usa `Resources.Load` para cargar assets de Armas/Skills por nombre (requiere carpetas `Resources/Weapons` y `Resources/Skills`).
+*   **Flujo Básico de Escenas:**
+    *   `MainMenu` (con `MainMenuUI`) muestra datos básicos del jugador (cargados/creados por defecto) e inicia la pelea.
+    *   `BattleManager` carga los `CharacterSaveData` indicados por PlayerPrefs, instancia prefabs, aplica los datos a los componentes `CharacterData` e inicializa la batalla y las IAs.
+*   **Sistema de Progresión (Placeholder):**
+    *   `ProgressionManager` (persistente) existe.
+    *   Otorga XP base al ganador (llamado desde `BattleManager`).
+    *   Calcula subida de nivel.
+    *   Aplica una **mejora de stat aleatoria simple** (vida, daño o velocidad) al `CharacterSaveData` del ganador.
+    *   Guarda los datos actualizados.
+
+## 4. Hacia Dónde Vamos (Próximos Pasos Inmediatos)
+
+1.  **Sistema de Mejora Real (Level Up):**
+    *   Modificar `ProgressionManager` para generar 2-3 **opciones de mejora** aleatorias (stats, armas, skills) de "pools" definidos.
+    *   Crear **UI** en `MainMenu` para mostrar estas opciones al jugador.
+    *   Implementar la lógica de selección y aplicación de la mejora elegida al `CharacterSaveData`.
+2.  **Expandir Contenido:**
+    *   Crear más assets `.asset` de `WeaponData` y `SkillData`.
+    *   Moverlos a las carpetas `Resources` correspondientes.
+3.  **Integrar Habilidades Activas:**
+    *   Asegurar que `CharacterCombat.TryUseSkill` funcione con `learnedSkills`.
+    *   Mejorar `LuchadorAIController.ChooseSkillToUse` para que la IA use las skills aprendidas.
+    *   Verificar manejo de cooldowns de skills en `CharacterData`.
+4.  **Visuales:**
+    *   Crear el script `CharacterVisuals.cs`.
+    *   Añadirlo al prefab y configurarlo para mostrar el `weaponSprite` del arma equipada (usando `weaponSpriteRenderer`).
+    *   Llamar a `visuals.UpdateWeaponVisuals()` desde `BattleManager.ConfigureLuchadorInstance`.
+
+## 5. Visión a Largo Plazo (Backend con Firebase)
+
+*   **Almacenamiento Centralizado:** Usar **Firestore** o **Realtime Database** para guardar los `CharacterSaveData` de todos los jugadores.
+*   **Autenticación Segura:** Usar **Firebase Authentication** (integrado con Google Sign-In).
+*   **Lógica de Servidor:** Usar **Cloud Functions** para validar resultados, otorgar recompensas, gestionar rankings/torneos.
+*   **Objetivo:** Habilitar **PvP asíncrono** y **persistencia de datos** real.
