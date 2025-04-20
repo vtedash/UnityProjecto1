@@ -4,19 +4,16 @@ using System.Collections.Generic; // No es necesario aquí realmente
 
 public class BattleManager : MonoBehaviour
 {
-    // --- CAMBIO: Nombre de variable y tooltip implícito ---
-    public GameObject luchadorPrefab;
+    public GameObject luchadorPrefab; // Prefab del personaje luchador
     public Transform spawnPoint1;
     public Transform spawnPoint2;
-    // --- CAMBIO: Nombres de variables ---
-    public CharacterStats statsLuchador1;
-    public CharacterStats statsLuchador2;
+    public CharacterStats statsLuchador1; // Stats para el luchador 1
+    public CharacterStats statsLuchador2; // Stats para el luchador 2
 
     [Header("Team Colors")]
     public Color team1Color = Color.blue;
     public Color team2Color = Color.red;
 
-    // --- CAMBIO: Nombres de variables ---
     private GameObject luchadorInstance1;
     private GameObject luchadorInstance2;
     // Cachear HealthSystems para eficiencia
@@ -25,23 +22,20 @@ public class BattleManager : MonoBehaviour
 
     void Start()
     {
-        // --- Validaciones Iniciales ---
+        // Validaciones Iniciales
         if (spawnPoint1 == null) spawnPoint1 = CreateSpawnPoint("SpawnPoint1", new Vector3(-3, 0, 0));
         if (spawnPoint2 == null) spawnPoint2 = CreateSpawnPoint("SpawnPoint2", new Vector3(3, 0, 0));
 
-        // --- CAMBIO: Mensaje de error ---
         if (statsLuchador1 == null || statsLuchador2 == null)
         {
             Debug.LogError("¡Asigna los CharacterStats para ambos luchadores en el BattleManager!", this);
             enabled = false; return;
         }
-        // --- CAMBIO: Mensaje de error y variable ---
         if (luchadorPrefab == null)
         {
              Debug.LogError("¡Asigna el Prefab del Luchador en el BattleManager!", this);
              enabled = false; return;
         }
-        // --- Fin Validaciones ---
 
         StartBattle();
     }
@@ -58,21 +52,17 @@ public class BattleManager : MonoBehaviour
     {
         Debug.Log("Iniciando batalla...");
 
-        // --- Instanciar y Configurar Luchador 1 ---
-        // --- CAMBIO: Variable Prefab y nombre instancia ---
+        // Instanciar y Configurar Luchador 1
         luchadorInstance1 = Instantiate(luchadorPrefab, spawnPoint1.position, Quaternion.identity);
         luchadorInstance1.name = "Luchador_Alpha"; // Equipo Player (por defecto)
         luchadorInstance1.tag = "Player"; // Asignar tag para que el otro lo encuentre
-        // --- CAMBIO: Llamada a función configuradora y variable stats ---
         ConfigureLuchador(luchadorInstance1, statsLuchador1, "Enemy", team1Color); // Buscará enemigos
         health1 = luchadorInstance1.GetComponent<HealthSystem>(); // Cachear HealthSystem
 
-        // --- Instanciar y Configurar Luchador 2 ---
-         // --- CAMBIO: Variable Prefab y nombre instancia ---
+        // Instanciar y Configurar Luchador 2
         luchadorInstance2 = Instantiate(luchadorPrefab, spawnPoint2.position, Quaternion.identity);
         luchadorInstance2.name = "Luchador_Beta"; // Equipo Enemy
         luchadorInstance2.tag = "Enemy";   // Asignar tag para que el otro lo encuentre
-         // --- CAMBIO: Llamada a función configuradora y variable stats ---
         ConfigureLuchador(luchadorInstance2, statsLuchador2, "Player", team2Color); // Buscará Players
         health2 = luchadorInstance2.GetComponent<HealthSystem>(); // Cachear HealthSystem
 
@@ -80,7 +70,7 @@ public class BattleManager : MonoBehaviour
         // if (AstarPath.active != null) AstarPath.active.Scan();
     }
 
-    // --- CAMBIO: Nombre de la función helper ---
+    // Función helper para configurar una instancia de Luchador
     void ConfigureLuchador(GameObject instance, CharacterStats stats, string enemyTagToSet, Color teamColorToSet)
     {
         if (instance == null) return;
@@ -92,10 +82,8 @@ public class BattleManager : MonoBehaviour
         }
         else Debug.LogError($"CharacterData no encontrado en {instance.name}", instance);
 
-        // --- CAMBIO: Tipo de componente a buscar ---
         LuchadorAIController ai = instance.GetComponent<LuchadorAIController>();
         if (ai != null) ai.enemyTag = enemyTagToSet;
-        // --- CAMBIO: Mensaje de error ---
         else Debug.LogError($"LuchadorAIController no encontrado en {instance.name}", instance);
 
         Pathfinding.AIPath aiPath = instance.GetComponent<Pathfinding.AIPath>();
@@ -124,14 +112,12 @@ public class BattleManager : MonoBehaviour
 
         if (!alphaAlive && betaAlive)
         {
-            // --- CAMBIO: Mensaje Log ---
             Debug.Log("¡Luchador Beta (Equipo Enemy) GANA!");
             TriggerCelebration(luchadorInstance2);
             battleOver = true;
         }
         else if (!betaAlive && alphaAlive)
         {
-            // --- CAMBIO: Mensaje Log ---
              Debug.Log("¡Luchador Alpha (Equipo Player) GANA!");
              TriggerCelebration(luchadorInstance1);
              battleOver = true;
@@ -145,7 +131,7 @@ public class BattleManager : MonoBehaviour
          if (battleOver)
          {
              Debug.Log("BattleManager desactivado.");
-             this.enabled = false;
+             this.enabled = false; // Desactivar el manager cuando acaba la batalla
          }
     }
 
@@ -154,7 +140,6 @@ public class BattleManager : MonoBehaviour
         // Comprobar si el objeto aún existe (podría destruirse justo antes)
         if (winner != null)
         {
-            // --- CAMBIO: Tipo de componente a buscar ---
             LuchadorAIController winnerAI = winner.GetComponent<LuchadorAIController>();
             // Comprobar si la IA existe y está habilitada (no debería estarlo si acaba de morir, pero sí si ganó)
             if (winnerAI != null && winnerAI.enabled)

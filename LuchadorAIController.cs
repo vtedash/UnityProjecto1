@@ -1,4 +1,4 @@
-// File: LuchadorAIController.cs (Renombrado desde BrutoAIController.cs)
+// File: LuchadorAIController.cs
 using UnityEngine;
 using Pathfinding;
 using System.Collections;
@@ -12,7 +12,6 @@ using Random = UnityEngine.Random;
 [RequireComponent(typeof(CharacterData))]
 [RequireComponent(typeof(Rigidbody2D))]
 
-// --- CAMBIO: Nombre de la clase ---
 public class LuchadorAIController : MonoBehaviour
 {
     [Header("Targeting & Team")]
@@ -24,7 +23,7 @@ public class LuchadorAIController : MonoBehaviour
     public float pathUpdateRate = 0.5f;
     private float lastPathRequestTime = -1f;
     private Seeker seeker;
-    private AIPath aiPath;
+    private AIPath aiPath; // Componente de A* para movimiento
 
     [Header("AI Decision Parameters")]
     [Tooltip("Frecuencia (segundos) para reevaluar la situación y tomar una decisión.")]
@@ -63,9 +62,9 @@ public class LuchadorAIController : MonoBehaviour
     private float lastDecisionTime;
     private bool isCelebrating = false;
 
-    // --- Inicialización ---
     void Awake()
     {
+        // Obtener referencias a componentes necesarios
         seeker = GetComponent<Seeker>();
         aiPath = GetComponent<AIPath>();
         combat = GetComponent<CharacterCombat>();
@@ -74,6 +73,7 @@ public class LuchadorAIController : MonoBehaviour
         rb = GetComponent<Rigidbody2D>();
         animator = GetComponent<Animator>();
 
+        // Configurar GroundCheck si no está asignado
         if (groundCheckPoint == null)
         {
              Transform foundGroundCheck = transform.Find("GroundCheck");
@@ -91,12 +91,14 @@ public class LuchadorAIController : MonoBehaviour
 
     void Start()
     {
+        // Validar componentes críticos
         if (characterData == null || health == null || combat == null || aiPath == null) {
             Debug.LogError($"Faltan componentes críticos en {gameObject.name}, desactivando IA.");
             enabled = false;
             return;
         }
 
+        // Suscribirse al evento de muerte
         if (health != null) {
             health.OnDeath.AddListener(HandleDeath);
             Debug.Log($"{gameObject.name} subscribed HandleDeath to OnDeath.");
@@ -104,32 +106,34 @@ public class LuchadorAIController : MonoBehaviour
              Debug.LogError($"HealthSystem is null on {gameObject.name} in Start!");
         }
 
+        // Configurar AIPath con stats base si existen
         if (characterData.baseStats != null)
         {
             aiPath.maxSpeed = characterData.baseStats.movementSpeed;
-            aiPath.endReachedDistance = preferredCombatDistance * 0.9f;
-            aiPath.slowdownDistance = preferredCombatDistance;
-            aiPath.canMove = true;
-            aiPath.canSearch = true;
+            aiPath.endReachedDistance = preferredCombatDistance * 0.9f; // Distancia a la que considera que llegó
+            aiPath.slowdownDistance = preferredCombatDistance; // Distancia a la que empieza a frenar
+            aiPath.canMove = true; // Permitir movimiento A*
+            aiPath.canSearch = true; // Permitir búsqueda de caminos A*
         } else {
             Debug.LogWarning($"BaseStats no asignados en {gameObject.name} en Start. AIPath usará valores por defecto.");
         }
 
-        lastDecisionTime = Time.time;
-        FindTarget();
+        lastDecisionTime = Time.time; // Inicializar timer de decisión
+        FindTarget(); // Buscar objetivo inicial
     }
 
-    // --- Bucle Principal de IA ---
     void Update()
     {
+        // No hacer nada si la IA está desactivada o el personaje está aturdido
         if (!enabled || characterData.isStunned)
         {
             if (characterData.isStunned && aiPath != null && aiPath.canMove) {
-                 aiPath.canMove = false;
+                 aiPath.canMove = false; // Detener A* si está aturdido
             }
             return;
         }
 
+        // Si está celebrando, detener movimiento y no tomar decisiones
         if (isCelebrating)
         {
             if (aiPath != null && aiPath.canMove) aiPath.canMove = false;
@@ -137,173 +141,193 @@ public class LuchadorAIController : MonoBehaviour
             return;
         }
 
-        CheckIfGrounded();
+        CheckIfGrounded(); // Actualizar estado de isGrounded
 
+        // Tomar una decisión de IA a intervalos regulares
         if (Time.time >= lastDecisionTime + decisionInterval)
         {
             MakeDecision();
             lastDecisionTime = Time.time;
         }
 
+        // Actualizar el path de A* si es necesario
         UpdateAStarPath();
     }
 
-    // --- Lógica de Decisión Principal ---
+    // Lógica de Decisión Principal de la IA
     void MakeDecision()
     {
-        if (isCelebrating) return;
+        if (isCelebrating) return; // No decidir si está celebrando
 
+        // Buscar objetivo si el actual no es válido
         if (!IsTargetValid())
         {
             FindTarget();
             if (!IsTargetValid())
             {
-                EnterIdleState();
+                EnterIdleState(); // Si no hay objetivo válido, quedarse quieto
                 return;
             }
         }
 
+        // No tomar nuevas decisiones si está en medio de un dash o parry
         if (characterData.isDashing || characterData.isAttemptingParry) return;
 
+        // Evaluar acciones defensivas si predice un ataque
         bool predictedAttack = PredictEnemyAttack();
         if (predictedAttack && !characterData.isBlocking)
         {
             float choice = Random.value;
-            if (choice < parryPreference && combat.TryParry())
+            if (choice < parryPreference && combat.TryParry()) // Intentar Parry
             {
                 Debug.Log($"AI ({gameObject.name}): Intentando Parry!");
-                return;
+                return; // Acción tomada
             }
-            else if (choice < parryPreference + dodgePreference && CanAffordDash())
+            else if (choice < parryPreference + dodgePreference && CanAffordDash()) // Intentar Dash evasivo
              {
                  Vector2 evadeDir = (transform.position - currentTargetTransform.position).normalized;
-                 if(evadeDir == Vector2.zero) evadeDir = -transform.right;
+                 if(evadeDir == Vector2.zero) evadeDir = -transform.right; // Dirección por defecto si están superpuestos
                  if (combat.TryDash(evadeDir)) {
                      Debug.Log($"AI ({gameObject.name}): Intentando Dash Evasivo!");
-                     return;
+                     return; // Acción tomada
                  }
              }
-            else if (characterData.currentStamina > 0)
+            else if (characterData.currentStamina > 0) // Intentar Bloquear como último recurso defensivo
             {
                  if (combat.TryStartBlocking()) {
                      Debug.Log($"AI ({gameObject.name}): Empezando a Bloquear por amenaza!");
-                     return;
+                     return; // Acción tomada
                  }
             }
         }
+        // Si no hay predicción de ataque y está bloqueando, dejar de bloquear
         else if (!predictedAttack && characterData.isBlocking) {
              combat.StopBlocking();
         }
 
+        // No continuar si está bloqueando (ya sea por decisión o por predicción)
         if (characterData.isBlocking) return;
 
+        // Evaluar salud actual
         bool isHealthy = true;
          if (characterData != null && characterData.baseStats != null && characterData.baseStats.maxHealth > 0) {
              isHealthy = (characterData.currentHealth / characterData.baseStats.maxHealth) > lowHealthThreshold;
          }
 
+        // Calcular distancias (cuadradas para eficiencia)
         float distanceSqr = (currentTargetTransform.position - transform.position).sqrMagnitude;
         float attackRangeSqr = characterData.baseStats.attackRange * characterData.baseStats.attackRange;
         float preferredDistSqr = preferredCombatDistance * preferredCombatDistance;
 
-        bool isTargetInRange_Basic = distanceSqr <= attackRangeSqr;
-        bool isTargetInRange_Preferred = distanceSqr <= preferredDistSqr;
+        bool isTargetInRange_Basic = distanceSqr <= attackRangeSqr; // En rango para ataque básico
+        bool isTargetInRange_Preferred = distanceSqr <= preferredDistSqr; // En rango de combate deseado
 
-        SkillData chosenSkill = ChooseSkillToUse();
-        if (chosenSkill != null && Random.value < skillUseChance)
+        // Evaluar uso de Habilidades
+        SkillData chosenSkill = ChooseSkillToUse(); // Elegir la mejor habilidad disponible
+        if (chosenSkill != null && Random.value < skillUseChance) // Si hay habilidad y toca usarla
         {
             bool skillRequiresTarget = chosenSkill.range > 0 || chosenSkill.skillType == SkillType.DirectDamage || chosenSkill.skillType == SkillType.Projectile;
             float skillRangeSqr = chosenSkill.range * chosenSkill.range;
-            bool skillInRange = chosenSkill.range <= 0 || distanceSqr <= skillRangeSqr;
+            bool skillInRange = chosenSkill.range <= 0 || distanceSqr <= skillRangeSqr; // Habilidad en rango
 
-            if (skillInRange) {
+            if (skillInRange) { // Si está en rango, intentar usarla
                  if (combat.TryUseSkill(chosenSkill)) {
                      Debug.Log($"AI ({gameObject.name}): Usando Skill {chosenSkill.skillName}!");
-                     return;
+                     return; // Acción tomada
                  }
-            } else if (skillRequiresTarget) {
+            } else if (skillRequiresTarget) { // Si no está en rango pero necesita target, moverse
                  Debug.Log($"AI ({gameObject.name}): Moviéndose para usar Skill {chosenSkill.skillName}");
-                 EnsureMovingTowardsTarget();
-                 return;
+                 EnsureMovingTowardsTarget(); // Asegurar que se mueve hacia el objetivo
+                 return; // Acción tomada (moverse)
             }
         }
 
-        if (isTargetInRange_Basic && characterData.IsAttackReady())
+        // Evaluar Ataque Básico
+        if (isTargetInRange_Basic && characterData.IsAttackReady()) // Si está en rango y el ataque no está en cooldown
         {
-            if (combat.TryAttack())
+            if (combat.TryAttack()) // Intentar atacar
             {
-                 return;
+                 return; // Acción tomada
             }
         }
 
+        // Evaluar Dash Ofensivo (para acortar distancia rápidamente)
         float dashEngageRangeSqr = (preferredCombatDistance + dashEngageRangeBonus) * (preferredCombatDistance + dashEngageRangeBonus);
-        bool wantsToDashEngage = distanceSqr > dashEngageRangeSqr;
+        bool wantsToDashEngage = distanceSqr > dashEngageRangeSqr; // Si está más lejos del rango preferido + bonus
 
-        if (wantsToDashEngage && CanAffordDash() && Random.value < aggression) {
+        if (wantsToDashEngage && CanAffordDash() && Random.value < aggression) { // Si quiere, puede y es agresivo
              Vector2 engageDir = (currentTargetTransform.position - transform.position).normalized;
-              if(engageDir == Vector2.zero) engageDir = transform.right;
-             if (combat.TryDash(engageDir)) {
+              if(engageDir == Vector2.zero) engageDir = transform.right; // Dirección por defecto
+             if (combat.TryDash(engageDir)) { // Intentar dash hacia el objetivo
                  Debug.Log($"AI ({gameObject.name}): Usando Dash para Acercarse!");
-                 return;
+                 return; // Acción tomada
              }
         }
-        else if (!isTargetInRange_Preferred)
+        // Evaluar Movimiento Normal
+        else if (!isTargetInRange_Preferred) // Si no está en la distancia preferida (pero no tan lejos como para dashear)
         {
-             EnsureMovingTowardsTarget();
+             EnsureMovingTowardsTarget(); // Moverse normalmente hacia el objetivo
         }
-        else if (aiPath != null && aiPath.canMove)
+        // Evaluar Detenerse
+        else if (aiPath != null && aiPath.canMove) // Si está en la distancia preferida y A* se está moviendo
         {
              Debug.Log($"AI ({gameObject.name}): En rango preferido, deteniendo movimiento.");
-             aiPath.canMove = false;
-             aiPath.destination = transform.position;
-             if(rb != null) rb.linearVelocity = Vector2.zero;
+             aiPath.canMove = false; // Detener A*
+             aiPath.destination = transform.position; // Fijar destino actual para evitar deriva
+             if(rb != null) rb.linearVelocity = Vector2.zero; // Detener física por si acaso
         }
     }
 
     // --- Funciones Auxiliares de IA ---
 
+    // Asegura que el componente AIPath esté activo y buscando el objetivo
     void EnsureMovingTowardsTarget() {
         if (isCelebrating) {
-            if (aiPath != null) aiPath.canMove = false;
+            if (aiPath != null) aiPath.canMove = false; // No moverse si celebra
             return;
         }
 
-        if(aiPath != null && !aiPath.canMove) {
+        if(aiPath != null && !aiPath.canMove) { // Si A* no se está moviendo, activarlo
             Debug.Log($"AI ({gameObject.name}): Reanudando movimiento hacia el objetivo.");
             aiPath.canMove = true;
         }
-        RequestPathToTarget();
+        RequestPathToTarget(); // Pedir un nuevo camino (o actualizarlo)
     }
 
+    // Detiene el movimiento y acciones defensivas
     void EnterIdleState() {
-        if (this.enabled && !isCelebrating) {
+        if (this.enabled && !isCelebrating) { // Solo si la IA está activa y no celebra
              Debug.Log($"AI ({gameObject.name}): Entrando en Estado Idle.");
-             if (aiPath != null) aiPath.canMove = false;
-             combat?.StopBlocking();
+             if (aiPath != null) aiPath.canMove = false; // Detener A*
+             combat?.StopBlocking(); // Dejar de bloquear si lo estaba haciendo
         }
     }
 
+    // Verifica si el objetivo actual sigue siendo válido (existe y está vivo)
     bool IsTargetValid()
     {
         return currentTargetTransform != null && currentTargetHealth != null && currentTargetHealth.IsAlive();
     }
 
+    // Busca el enemigo más cercano con el tag especificado
     void FindTarget()
     {
-        if (isCelebrating) return;
+        if (isCelebrating) return; // No buscar si celebra
 
         GameObject[] potentialTargets = GameObject.FindGameObjectsWithTag(enemyTag);
         Transform closestTarget = null;
         float minDistanceSqr = float.MaxValue;
 
+        // Iterar sobre todos los posibles objetivos
         foreach (GameObject potentialTarget in potentialTargets)
         {
-            if (potentialTarget == gameObject) continue;
+            if (potentialTarget == gameObject) continue; // Ignorarse a sí mismo
             HealthSystem potentialHealth = potentialTarget.GetComponent<HealthSystem>();
-            if (potentialHealth == null || !potentialHealth.IsAlive()) continue;
+            if (potentialHealth == null || !potentialHealth.IsAlive()) continue; // Ignorar si no tiene vida o está muerto
 
+            // Calcular distancia cuadrada (más eficiente que Distance)
             float distanceSqr = (potentialTarget.transform.position - transform.position).sqrMagnitude;
-            if (distanceSqr < minDistanceSqr)
+            if (distanceSqr < minDistanceSqr) // Si es el más cercano hasta ahora
             {
                 minDistanceSqr = distanceSqr;
                 closestTarget = potentialTarget.transform;
@@ -311,39 +335,44 @@ public class LuchadorAIController : MonoBehaviour
         }
 
         Transform previousTarget = currentTargetTransform;
-        if (closestTarget != null)
+        if (closestTarget != null) // Si se encontró un objetivo
         {
             currentTargetTransform = closestTarget;
             currentTargetHealth = currentTargetTransform.GetComponent<HealthSystem>();
-            combat.SetTarget(currentTargetHealth);
-            if (currentTargetTransform != previousTarget) {
+            combat.SetTarget(currentTargetHealth); // Informar al componente de combate
+            if (currentTargetTransform != previousTarget) { // Si el objetivo cambió
                  Debug.Log($"{gameObject.name} encontró/cambió objetivo: {currentTargetTransform.name}");
-                 lastPathRequestTime = -pathUpdateRate;
-                 EnsureMovingTowardsTarget();
+                 lastPathRequestTime = -pathUpdateRate; // Forzar recálculo inmediato de path
+                 EnsureMovingTowardsTarget(); // Empezar a moverse hacia él
             }
         }
-        else
+        else // Si no se encontró ningún objetivo válido
         {
               if(previousTarget != null) Debug.Log($"{gameObject.name} perdió su objetivo o no encontró nuevos.");
-              EnterIdleState();
+              EnterIdleState(); // Quedarse quieto
         }
     }
 
+    // Heurística simple para predecir si el enemigo va a atacar
     bool PredictEnemyAttack() {
          if (!IsTargetValid() || animator == null || characterData.baseStats == null) return false;
          float distSqr = (currentTargetTransform.position - transform.position).sqrMagnitude;
+         // Considerar un rango de predicción un poco mayor que el rango de ataque base
          float predictRangeSqr = characterData.baseStats.attackRange * 1.5f * characterData.baseStats.attackRange * 1.5f;
 
-         if (distSqr < predictRangeSqr) {
+         if (distSqr < predictRangeSqr) { // Si el enemigo está cerca
+             // Calcular si el enemigo está mirando hacia mí (producto escalar)
              Vector2 dirToMe = (transform.position - currentTargetTransform.position).normalized;
-             float dot = Vector2.Dot(currentTargetTransform.right, dirToMe);
-             if (dot > 0.7f && Random.value < 0.10f) {
-                  return true;
+             float dot = Vector2.Dot(currentTargetTransform.right, dirToMe); // Asume que 'right' es adelante
+             // Si mira más o menos hacia mí y hay una pequeña probabilidad aleatoria
+             if (dot > 0.7f && Random.value < 0.10f) { // Ajustar umbral de dot y probabilidad
+                  return true; // Predecir ataque
              }
          }
-         return false;
+         return false; // No predecir ataque
     }
 
+    // Elige una habilidad para usar basada en prioridad (ej. curación si baja vida)
     SkillData ChooseSkillToUse() {
          bool isCurrentlyHealthy = true;
          if (characterData != null && characterData.baseStats != null && characterData.baseStats.maxHealth > 0) {
@@ -352,25 +381,31 @@ public class LuchadorAIController : MonoBehaviour
 
          SkillData bestSkill = null;
          foreach (SkillData currentSkill in characterData.skills) {
-             if (characterData.IsSkillReady(currentSkill)) {
+             if (characterData.IsSkillReady(currentSkill)) { // Si la habilidad no está en cooldown
+                 // Prioridad 1: Curarse si tiene poca vida
                  if (currentSkill.skillType == SkillType.Heal && !isCurrentlyHealthy) {
                      Debug.Log($"AI ({gameObject.name}): Prioritizing Heal skill.");
                      return currentSkill;
                  }
+                 // Prioridad 2: Guardar la primera habilidad ofensiva encontrada
                  if (bestSkill == null && (currentSkill.skillType == SkillType.DirectDamage || currentSkill.skillType == SkillType.Projectile || currentSkill.skillType == SkillType.AreaOfEffect)) {
                      bestSkill = currentSkill;
                  }
+                 // Añadir más lógicas de prioridad aquí si es necesario
              }
          }
-         return bestSkill;
+         return bestSkill; // Devolver la mejor opción encontrada (o null si ninguna)
     }
 
+    // Comprueba si hay suficiente stamina para hacer un dash
      bool CanAffordDash() {
         return characterData.baseStats != null && characterData.currentStamina >= characterData.baseStats.dashCost;
     }
 
 
     // --- Pathfinding A* ---
+
+    // Actualiza la petición de path si ha pasado el tiempo necesario
     void UpdateAStarPath() {
         if (isCelebrating) return;
 
@@ -381,36 +416,44 @@ public class LuchadorAIController : MonoBehaviour
         }
     }
 
+    // Solicita un nuevo camino al Seeker de A*
     void RequestPathToTarget()
     {
         if (isCelebrating) return;
 
+        // Solo pedir path si el seeker ha terminado el anterior, hay target y A* puede buscar
         if (seeker != null && seeker.IsDone() && currentTargetTransform != null && aiPath != null && aiPath.canSearch)
         {
             seeker.StartPath(transform.position, currentTargetTransform.position, OnPathComplete);
         }
     }
 
+    // Callback que se ejecuta cuando A* termina de calcular el path
     public void OnPathComplete(Path p)
     {
         if (p.error)
         {
             Debug.LogWarning($"{gameObject.name} no pudo calcular camino: {p.errorLog}");
-            if(!isCelebrating) EnterIdleState();
+            if(!isCelebrating) EnterIdleState(); // Si hay error, entrar en idle
         }
+        // Si no hay error, A* (AIPath) usará el camino automáticamente
     }
 
     // --- Manejo de Estados Propios ---
+
+    // Función llamada por el evento OnDeath de HealthSystem
     void HandleDeath()
     {
         Debug.Log($"HandleDeath called by OnDeath event for {gameObject.name}. Disabling AI.");
-        if(aiPath != null) aiPath.canMove = false;
-        isCelebrating = false;
-        enabled = false;
+        if(aiPath != null) aiPath.canMove = false; // Detener movimiento A*
+        isCelebrating = false; // Asegurarse de no estar celebrando
+        enabled = false; // Desactivar este script de IA
     }
 
+    // Inicia el estado de celebración (llamado por BattleManager)
      public void StartCelebrating()
      {
+          // Solo celebrar si la IA está activa, el personaje está vivo y no está ya celebrando
           if (!this.enabled || !health.IsAlive() || isCelebrating) return;
 
            Debug.Log($"AI ({gameObject.name}): ¡CELEBRANDO!");
@@ -419,29 +462,34 @@ public class LuchadorAIController : MonoBehaviour
            // Detener acciones de combate y movimiento
            if (aiPath != null) aiPath.canMove = false;
            if (rb != null) rb.linearVelocity = Vector2.zero;
-           combat?.InterruptActions();
-           combat?.StopBlocking();
-           currentTargetTransform = null;
+           combat?.InterruptActions(); // Interrumpir acciones de combate
+           combat?.StopBlocking(); // Dejar de bloquear
+           currentTargetTransform = null; // Olvidar objetivo
            currentTargetHealth = null;
 
-           // *** Usar ?. para llamada segura ***
-           animator?.SetTrigger("Celebrate");
+           animator?.SetTrigger("Celebrate"); // Activar animación de celebración
      }
 
 
     // --- Otros ---
+
+    // Comprueba si el personaje está tocando el suelo
     void CheckIfGrounded()
     {
         if (groundCheckPoint == null) return;
         isGrounded = Physics2D.OverlapCircle(groundCheckPoint.position, groundCheckRadius, groundLayer);
+        // Podrías querer actualizar un parámetro "IsGrounded" en el Animator aquí
+        // animator?.SetBool("IsGrounded", isGrounded);
     }
 
+    // Limpieza al destruir el objeto
     void OnDestroy()
     {
+        // Desuscribirse del evento para evitar errores
         if (health != null)
         {
              health.OnDeath.RemoveListener(HandleDeath);
         }
-        StopAllCoroutines();
+        StopAllCoroutines(); // Detener todas las corutinas activas en este script
     }
 }
