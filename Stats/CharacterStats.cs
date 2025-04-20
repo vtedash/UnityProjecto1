@@ -57,5 +57,7 @@ public class CharacterStats : ScriptableObject
     [Tooltip("Tiempo de espera (cooldown) en segundos después de intentar un parry.")]
     public float parryCooldown = 2.0f;
 
+    
+
     // Puedes añadir más stats aquí (ej. Resistencia, Prob. Crítico, etc.)
 }

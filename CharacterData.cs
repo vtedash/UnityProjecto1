@@ -5,9 +5,30 @@ using Pathfinding;
 
 public class CharacterData : MonoBehaviour
 {
+
+
+    [Header("Base Stats (Evolucionan con Nivel)")]
+public float baseMaxHealth = 100f;
+public float baseMovementSpeed = 5f;
+public float baseAttackDamage = 10f;
+public float baseAttackRange = 1f;
+public float baseAttackCooldown = 1f;
+public float baseMaxStamina = 100f;
+public float baseStaminaRegenRate = 15f;
+// Añade otras stats base que necesites (dash, block, parry costs/cooldowns si quieres que evolucionen)
+
+[Header("Progression")]
+public int level = 1;
+public float currentXP = 0f;
+public float xpToNextLevel = 100f; // Podrías calcular esto basado en el nivel
+
+[Header("Equipment & Skills")]
+public WeaponData equippedWeapon; // ¡Importante! Referencia al arma
+public List<SkillData> learnedSkills = new List<SkillData>(); // Para habilidades activas
+// Más adelante añadiremos pasivas y mascotas
+
     [Header("Configuration")]
-    public CharacterStats baseStats;
-    public List<SkillData> skills;
+        public List<SkillData> skills;
 
     [Header("Current State (Runtime - Do Not Modify Directly)")]
     [SerializeField] private float _currentHealth;
